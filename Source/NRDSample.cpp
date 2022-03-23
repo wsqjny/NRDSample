@@ -2084,8 +2084,8 @@ void Sample::CreatePipelines()
     { // Pipeline::IndirectRays
         const nri::DescriptorRangeDesc descriptorRanges1[] =
         {
-            { 0, 8, nri::DescriptorType::TEXTURE, nri::ShaderStage::ALL },
-            { 8, 7, nri::DescriptorType::STORAGE_TEXTURE, nri::ShaderStage::ALL }
+            { 0, 7, nri::DescriptorType::TEXTURE, nri::ShaderStage::ALL },
+            { 7, 7, nri::DescriptorType::STORAGE_TEXTURE, nri::ShaderStage::ALL }
         };
 
         const nri::DescriptorSetDesc descriptorSetDesc[] =
@@ -2419,8 +2419,7 @@ void Sample::CreateDescriptorSets()
             Get(Descriptor::PrimaryMip_Texture),
             Get(Descriptor::ComposedLighting_ViewZ_Texture),
             Get(Descriptor::Ambient_Texture),
-            Get(Descriptor::Motion_Texture),
-            Get(Descriptor((uint32_t)Descriptor::MaterialTextures + utils::StaticTexture::EnvTexture)),
+            Get(Descriptor::Motion_Texture)
         };
 
         const nri::Descriptor* storageTextures[] =

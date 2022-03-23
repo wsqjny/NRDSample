@@ -21,16 +21,15 @@ NRI_RESOURCE( Texture2D<float>, gIn_PrimaryMip, t, 3, 1 );
 NRI_RESOURCE( Texture2D<float4>, gIn_PrevFinalLighting_PrevViewZ, t, 4, 1 );
 NRI_RESOURCE( Texture2D<float3>, gIn_Ambient, t, 5, 1 );
 NRI_RESOURCE( Texture2D<float3>, gIn_Motion, t, 6, 1 );
-NRI_RESOURCE(Texture2D<float3>, gin_Environment, t, 7, 1);
 
 // Outputs
-NRI_RESOURCE( RWTexture2D<float4>, gOut_Diff, u, 8, 1 );
-NRI_RESOURCE( RWTexture2D<float4>, gOut_Spec, u, 9, 1 );
-NRI_RESOURCE( RWTexture2D<float4>, gOut_DiffDirectionPdf, u, 10, 1 );
-NRI_RESOURCE( RWTexture2D<float4>, gOut_SpecDirectionPdf, u, 11, 1 );
-NRI_RESOURCE( RWTexture2D<float>, gOut_Downsampled_ViewZ, u, 12, 1 );
-NRI_RESOURCE( RWTexture2D<float3>, gOut_Downsampled_Motion, u, 13, 1 );
-NRI_RESOURCE( RWTexture2D<float4>, gOut_Downsampled_Normal_Roughness, u, 14, 1 );
+NRI_RESOURCE( RWTexture2D<float4>, gOut_Diff, u, 7, 1 );
+NRI_RESOURCE( RWTexture2D<float4>, gOut_Spec, u, 8, 1 );
+NRI_RESOURCE( RWTexture2D<float4>, gOut_DiffDirectionPdf, u, 9, 1 );
+NRI_RESOURCE( RWTexture2D<float4>, gOut_SpecDirectionPdf, u, 10, 1 );
+NRI_RESOURCE( RWTexture2D<float>, gOut_Downsampled_ViewZ, u, 11, 1 );
+NRI_RESOURCE( RWTexture2D<float3>, gOut_Downsampled_Motion, u, 12, 1 );
+NRI_RESOURCE( RWTexture2D<float4>, gOut_Downsampled_Normal_Roughness, u, 13, 1 );
 
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
