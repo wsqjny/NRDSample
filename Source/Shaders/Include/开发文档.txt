@@ -1,0 +1,74 @@
+2022-03-23 更新：
+1. Delta transmission 验证通过
+
+
+2022-03-17
+这个版本，pt 完成了 如下内容：
+材质部分，支持StandardBSDF， 如下lobe：
+		The BSDF has the following lobes:
+		- Delta reflection (ideal specular reflection).				// 完全镜面反射									【验证通过，可以交付使用】
+		- Specular reflection using a GGX microfacet model.			// 目前最常见的 Glossy SpecularReflection		【验证通过，可以交付使用】
+		- Diffuse reflection using Disney's diffuse BRDF.			// 三种类型漫反射， 可配置						【验证通过，可以交付使用】
+		- Delta transmission (ideal specular transmission).			// 完全镜面折射									【代码已完成，尚有bug，正在查】
+		- Specular transmission using a GGX microfacet model.		// 同3											【代码已完成，尚有bug，正在查】
+		- Diffuse transmission.										// 粗糙表面产生的折射。							【代码已完成，尚有bug，正在查】
+local 光源：
+		大部分的local 光源，包含点光源，聚光灯，面光源，平行光等， 平行光已验证，其他光源尚未验证。
+env 光照：
+		仿照nrd sample，做了一个简单的 过程生成的天空，一个简单的大气散射模型。 没有做重要性采样。 如果需要换成较复杂的hdri，后期需要完善。
+		
+支持NRD RELAX Diffuse_Specular method 降噪。 其他降噪器，及method 不支持。
+
+总共 涉及了如下三类文件修改：
+1. 材质。
+2. 灯光。
+3. PT 主流程， 包括了路径定义，已经更新。 (FalcorPathState.hlsli， FalcorPathTracer.hlsli)
+如果需要快速接入，理想状态开发者是三部分内容可以均不做修改，只需要根据引擎实际情况，做填空题就可。
+
+开发者均可根据自己引擎做出修改，或者使用Falcor 提供的版本。 
+
+以下文件均直接翻译自 Falcor，为了能编译通过，只做了些许修改。理论上如果开发者不关心pt 材质细节，这些文件可以不需要做其他修改。
+FalcorBxDF.hlsli 							-->  BxDF.slang
+FalcorBxDFConfig.hlsli						-->  BxDFConfig.slang
+FalcorFresnel.hlsli							-->	 Fresnel.slang	
+FalcorIBSDF.hlsli							-->  IBSDF.slang
+FalcorIBxDF.hlsli							-->  IBxDF.slang
+FalcorLobeType.hlsli						-->  LobeType.slang
+FalcorMathConstants.hlsli					-->  MathConstants.slangh
+FalcorMathHelpers.hlsli						-->  MathHelpers.slang
+FalcorMicrofacet.hlsli						-->  Microfacet.slang
+FalcorStandardBSDF.hlsli					-->  StandardBSDF.slang
+FalcorPathTracerLightData.hlsli				---> falcor 中的local光源 数据定义。
+FalcorPathTracerLightHelper.hlsli			---> falcor 中local 光源实现算法。
+
+
+以下文件，我加入了一些自己的修改，暂处于临时版本，需要进一步完善，需要开发者根据自己擎，做出修改
+FalcorSampleGenerator.hlsli					-->  随机数部分，这里使用的是NRD SDK 的自己的随机数，开发者可以根据自己引擎做修改，除非有明确修改，建议暂时不要动。
+FalcorEnvMapSampler.hlsli					--> 灯光采样中的Env 环境灯光。目前这个版本只做了一个最简单的环境灯光，没有重要性采样。  【需要后续更新】。 可以暂时不用动。
+FalcorNRDHelpers.hlsli						--> 用于辅助nrd 输出。 需要根据primary ray，把 pt 的radiance 输出，拆分成diffuse 和 specular 两个部分交给NRD 降噪。 这里只是做了一个临时的简单版本。
+
+以下为pt 的核心部分。
+FalcorPathState.hlsli， 路径定义，大部分翻译自 Falcor， 添加如下辅助信息：
+FalcorPathTracer.hlsli， pt 框架，用于驱动pt 更新。
+
+FalcorShadingData.hlsli						-->	 	pt 两个重要资源中的一个，我把暂时没有用到的变量注释掉了，只保留了最关键的几个。
+FalcorLoadShadingData.hlsli					-->		开发者自己填充 shading data.
+
+pt 整个流程中有两个资源需要开发者 根据trace 返回的结果自己 填充好，交给pt ：
+StandardBSDFData 填充参考： GetStanderdBSDFData() in IndirectRays.cs.hlsl
+ShadingsData 填充写到了	    FalcorLoadShadingData.hlsli 中。
+
+pt 的入口为：IndirectRays.cs.hlsl。
+
+另外需要注意：
+falcor 中的pt 做了primary 光照 + 后续的pt。
+在nrd sample 中，我把primary 光照移出了 pt， 一来可以使用开发者引擎自己的直接光照结果，其二可以对直接光照产生的rt 软阴影做单独的降噪，以减少整体的噪声。 
+这么做也有一些不足，就是可能没办法统一pt 的光照， 和开发者引擎的local光源直接光照。 
+
+
+
+
+
+
+
+
