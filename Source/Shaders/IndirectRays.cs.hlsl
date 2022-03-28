@@ -92,6 +92,28 @@ inline float luminance(float3 rgb)
 
 
 
+
+struct FalcorPayload
+{
+    // geometry
+    float3 X;
+    float3 rayDirection;
+    float3 N;
+    float3 faceN;
+
+    // material
+    float3 diffuse;
+    float3 specular;
+    float  roughness;
+    float  metallic;
+    float  ior;
+    float3 transmission;
+    float  diffuseTransmission;
+    float  specularTransmission;
+};
+
+
+
 #include "FalcorSampleGenerator.hlsli"
 
 #include "FalcorIBxDF.hlsli"
@@ -106,6 +128,183 @@ inline float luminance(float3 rgb)
 #include "FalcorPathTracerLightHelper.hlsli"
 
 
+
+
+StandardBSDFData LoadStanderdBSDFData(FalcorPayload payload, ShadingData sd)
+{
+    StandardBSDFData data;
+
+    data.diffuse = payload.diffuse;
+    data.specular = payload.specular;
+    data.roughness = payload.roughness;
+    data.metallic = payload.metallic;
+    data.eta = sd.frontFacing ? (sd.IoR / payload.ior) : (payload.ior / sd.IoR);
+    data.transmission = payload.transmission;
+    data.diffuseTransmission = payload.diffuseTransmission;
+    data.specularTransmission = payload.specularTransmission;
+
+    return data;
+}
+
+FalcorPayload PrepareForPrimaryRayPayload(uint2 pixelPos, float viewZ)
+{
+    float2 pixelUv = float2(pixelPos + 0.5) * gInvRectSize;
+    float2 sampleUv = pixelUv + gJitter;
+
+    // G-buffer
+    float4 normalAndRoughness = NRD_FrontEnd_UnpackNormalAndRoughness(gIn_Normal_Roughness[pixelPos]);
+    float4 baseColorMetalness = gIn_BaseColor_Metalness[pixelPos];
+
+    float3 Xv = STL::Geometry::ReconstructViewPosition(sampleUv, gCameraFrustum, viewZ, gOrthoMode);
+    float3 X = STL::Geometry::AffineTransform(gViewToWorld, Xv);
+    float3 V = GetViewVector(X);
+    float3 N = normalAndRoughness.xyz;
+    float mip0 = gIn_PrimaryMip[pixelPos];
+
+    float NoV0 = abs(dot(N, V));
+
+    float3 albedo0, Rf00;
+    STL::BRDF::ConvertBaseColorMetalnessToAlbedoRf0(baseColorMetalness.xyz, baseColorMetalness.w, albedo0, Rf00);
+    albedo0 = max(albedo0, 0.001);
+
+
+    float mtlIoR = 1.1;
+    float mtlTransmission = 0.0;
+    float mtlDiffTrans = 0.0;
+    float mtlSpecTrans = 0.0;
+
+    if (0 && baseColorMetalness.w > 0.95)
+    {
+        mtlTransmission = 1.0;
+        mtlSpecTrans = 1.0;
+    }
+
+    FalcorPayload payload;
+
+    
+    //geometry.
+    {
+        //assum primary is front face.
+        payload.X = X;
+        payload.rayDirection = -V;
+        payload.N = N;
+        payload.faceN = N;
+    }
+
+    // material
+    {
+        payload.diffuse = albedo0;
+        payload.specular = Rf00;
+        payload.roughness = normalAndRoughness.w;
+        payload.metallic = baseColorMetalness.w;
+        payload.ior = mtlIoR;
+        payload.transmission = mtlTransmission;
+        payload.diffuseTransmission = mtlDiffTrans;
+        payload.specularTransmission = mtlSpecTrans;
+    }
+
+    return payload;
+}
+FalcorPayload FillFalcorPayloadAfterTrace(GeometryProps geometryProps, bool useSimplifiedModel = false)
+{
+    FalcorPayload payload = (FalcorPayload)0;
+
+    // geometry
+    {
+        payload.X = geometryProps.X;
+        payload.rayDirection = geometryProps.rayDirection;
+        payload.N = geometryProps.N;
+        payload.faceN = geometryProps.faceN;
+    }   
+
+
+    float sdIOR = 1.0;
+    bool sdFrontFacing = dot(-payload.rayDirection, payload.faceN) >= 0.f;
+
+
+    // material
+    {
+        [branch]
+        if (geometryProps.IsSky())
+        {
+            return payload;
+        }
+
+        uint baseTexture = geometryProps.GetBaseTexture();
+        float3 mips = GetRealMip(baseTexture, geometryProps.mip);
+
+        // Base color
+        float4 color = gIn_Textures[baseTexture].SampleLevel(gLinearMipmapLinearSampler, geometryProps.uv, mips.z);
+        color.xyz *= geometryProps.IsTransparent() ? 1.0 : STL::Math::PositiveRcp(color.w); // Correct handling of BC1 with pre-multiplied alpha
+        float3 baseColor = saturate(color.xyz);
+
+        // Roughness and metalness
+        float3 materialProps = gIn_Textures[baseTexture + 1].SampleLevel(gLinearMipmapLinearSampler, geometryProps.uv, mips.z).xyz;
+        float roughness = materialProps.y;
+        float metalness = materialProps.z;
+
+        // Normal
+        float2 packedNormal = gIn_Textures[baseTexture + 2].SampleLevel(gLinearMipmapLinearSampler, geometryProps.uv, mips.y).xy;
+        packedNormal = gUseNormalMap ? packedNormal : (127.0 / 255.0);
+        float3 N = STL::Geometry::TransformLocalNormal(packedNormal, geometryProps.T, geometryProps.N);
+        N = useSimplifiedModel ? geometryProps.N : N;
+
+        // Emission
+        float3 Lemi = gIn_Textures[baseTexture + 3].SampleLevel(gLinearMipmapLinearSampler, geometryProps.uv, mips.x).xyz;
+        Lemi *= (baseColor + 0.01) / (max(baseColor, max(baseColor, baseColor)) + 0.01);
+        Lemi = geometryProps.IsForcedEmission() ? geometryProps.GetForcedEmissionColor() : Lemi;
+        Lemi *= gEmissionIntensity * float(geometryProps.IsEmissive());
+
+        // Override material
+        [flatten]
+        if (gForcedMaterial == MAT_GYPSUM)
+        {
+            roughness = 1.0;
+            baseColor = 0.5;
+            metalness = 0.0;
+        }
+        else if (gForcedMaterial == MAT_COBALT)
+        {
+            roughness = pow(saturate(baseColor.x * baseColor.y * baseColor.z), 0.33333);
+            baseColor = float3(0.672411, 0.637331, 0.585456);
+            metalness = 1.0;
+        }
+
+        metalness = gMetalnessOverride == 0.0 ? metalness : gMetalnessOverride;
+        roughness = gRoughnessOverride == 0.0 ? roughness : gRoughnessOverride;
+
+
+        // sample material   
+        float3 diffuse, specular;
+        STL::BRDF::ConvertBaseColorMetalnessToAlbedoRf0(baseColor, metalness, diffuse, specular);
+        diffuse = max(diffuse, 0.001);
+
+        float mtlIoR = 1.1;
+        float mtlTransmission = 0.0;
+        float mtlDiffTrans = 0.0;
+        float mtlSpecTrans = 0.0;
+
+        if (0 && metalness > 0.95)
+        {
+            mtlTransmission = 1.0;
+            mtlSpecTrans = 1.0;
+        }
+
+
+        payload.diffuse = diffuse;
+        payload.specular = specular;
+        payload.roughness = roughness;
+        payload.metallic = metalness;
+        payload.ior = mtlIoR;
+        payload.transmission = mtlTransmission;
+        payload.diffuseTransmission = mtlDiffTrans;
+        payload.specularTransmission = mtlSpecTrans;
+    }
+
+    return payload;
+}
+
+
 struct SceneLights
 {
     uint LightCount;
@@ -118,89 +317,6 @@ static const float kNRDInvalidPathLength = HLF_MAX;
 
 
 
-
-StandardBSDFData GetStanderdBSDFData(GeometryProps geometryProps, ShadingData sd, bool useSimplifiedModel = false)
-{
-    StandardBSDFData data = (StandardBSDFData)0;
-   
-    [branch]
-    if (geometryProps.IsSky())
-    {
-        return data;
-    }
-
-    uint baseTexture = geometryProps.GetBaseTexture();
-    float3 mips = GetRealMip(baseTexture, geometryProps.mip);
-
-    // Base color
-    float4 color = gIn_Textures[baseTexture].SampleLevel(gLinearMipmapLinearSampler, geometryProps.uv, mips.z);
-    color.xyz *= geometryProps.IsTransparent() ? 1.0 : STL::Math::PositiveRcp(color.w); // Correct handling of BC1 with pre-multiplied alpha
-    float3 baseColor = saturate(color.xyz);
-
-    // Roughness and metalness
-    float3 materialProps = gIn_Textures[baseTexture + 1].SampleLevel(gLinearMipmapLinearSampler, geometryProps.uv, mips.z).xyz;
-    float roughness = materialProps.y;
-    float metalness = materialProps.z;
-
-    // Normal
-    float2 packedNormal = gIn_Textures[baseTexture + 2].SampleLevel(gLinearMipmapLinearSampler, geometryProps.uv, mips.y).xy;
-    packedNormal = gUseNormalMap ? packedNormal : (127.0 / 255.0);
-    float3 N = STL::Geometry::TransformLocalNormal(packedNormal, geometryProps.T, geometryProps.N);
-    N = useSimplifiedModel ? geometryProps.N : N;
-
-    // Emission
-    float3 Lemi = gIn_Textures[baseTexture + 3].SampleLevel(gLinearMipmapLinearSampler, geometryProps.uv, mips.x).xyz;
-    Lemi *= (baseColor + 0.01) / (max(baseColor, max(baseColor, baseColor)) + 0.01);
-    Lemi = geometryProps.IsForcedEmission() ? geometryProps.GetForcedEmissionColor() : Lemi;
-    Lemi *= gEmissionIntensity * float(geometryProps.IsEmissive());
-
-    // Override material
-    [flatten]
-    if (gForcedMaterial == MAT_GYPSUM)
-    {
-        roughness = 1.0;
-        baseColor = 0.5;
-        metalness = 0.0;
-    }
-    else if (gForcedMaterial == MAT_COBALT)
-    {
-        roughness = pow(saturate(baseColor.x * baseColor.y * baseColor.z), 0.33333);
-        baseColor = float3(0.672411, 0.637331, 0.585456);
-        metalness = 1.0;
-    }
-
-    metalness = gMetalnessOverride == 0.0 ? metalness : gMetalnessOverride;
-    roughness = gRoughnessOverride == 0.0 ? roughness : gRoughnessOverride;
-
-
-    // sample material   
-    float3 diffuse, specular;
-    STL::BRDF::ConvertBaseColorMetalnessToAlbedoRf0(baseColor, metalness, diffuse, specular);
-    diffuse = max(diffuse, 0.001);
-   
-    float mtlIoR = 1.1;
-    float mtlTransmission = 0.0;
-    float mtlDiffTrans = 0.0;
-    float mtlSpecTrans = 0.0;
-
-    if (0 && metalness > 0.95)
-    {
-        mtlTransmission = 1.0;
-        mtlSpecTrans = 1.0;
-    }
-
-
-    data.diffuse = diffuse;
-    data.specular = specular;
-    data.roughness = roughness;
-    data.metallic = metalness;
-    data.eta = sd.frontFacing ? (sd.IoR / mtlIoR) : (mtlIoR / sd.IoR);
-    data.transmission = mtlTransmission;
-    data.diffuseTransmission = mtlDiffTrans;
-    data.specularTransmission = mtlSpecTrans;
-
-    return data;
-}
 
 
 struct VisibilityQuery
@@ -254,24 +370,9 @@ void main( uint2 pixelPos : SV_DispatchThreadId )
         return;
     }
 
-    // G-buffer
-    float4 normalAndRoughness = NRD_FrontEnd_UnpackNormalAndRoughness( gIn_Normal_Roughness[ pixelPos ] );
-    float4 baseColorMetalness = gIn_BaseColor_Metalness[ pixelPos ];
+   
 
-    float3 Xv = STL::Geometry::ReconstructViewPosition( sampleUv, gCameraFrustum, viewZ, gOrthoMode);
-    float3 X = STL::Geometry::AffineTransform( gViewToWorld, Xv );
-    float3 V = GetViewVector( X );
-    float3 N = normalAndRoughness.xyz;
-    float mip0 = gIn_PrimaryMip[ pixelPos ];
 
-    float NoV0 = abs(dot(N, V));
-
-    float3 albedo0, Rf00;
-    STL::BRDF::ConvertBaseColorMetalnessToAlbedoRf0(baseColorMetalness.xyz, baseColorMetalness.w, albedo0, Rf00);
-    albedo0 = max(albedo0, 0.001);
-
-    float3 envBRDF0 = STL::BRDF::EnvironmentTerm_Ross( Rf00, NoV0, normalAndRoughness.w);
-    envBRDF0 = max( envBRDF0, 0.001 );
 
     // Ambient
     //float3 Lamb = gIn_Ambient.SampleLevel( gLinearSampler, float2( 0.5, 0.5 ), 0 );
@@ -296,46 +397,7 @@ void main( uint2 pixelPos : SV_DispatchThreadId )
     float mip = 0.0;
     float hitT = 0.0;
     
-    StandardBSDF standerdBSDF = (StandardBSDF)0;
-    GeometryProps geometryProps0 = (GeometryProps)0.0;
-    // prepare for primary.
-    {   
-        float mtlIoR = 1.1;
-        float mtlTransmission = 0.0;
-        float mtlDiffTrans = 0.0;
-        float mtlSpecTrans = 0.0;
 
-        if (0 && baseColorMetalness.w > 0.95)
-        {
-            mtlTransmission = 1.0;
-            mtlSpecTrans = 1.0;
-        }        
-
-        //assum primary is front face.
-        geometryProps0.X = X;
-        geometryProps0.rayDirection = -V;
-        geometryProps0.N = N;
-        geometryProps0.faceN = N;       
-        
-        ShadingData sd = loadShadingData(geometryProps0);         
-
-        standerdBSDF.data.diffuse = albedo0;
-        standerdBSDF.data.specular = Rf00;
-        standerdBSDF.data.roughness = normalAndRoughness.w;
-        standerdBSDF.data.metallic = baseColorMetalness.w;
-        standerdBSDF.data.eta = sd.frontFacing ? (sd.IoR / mtlIoR) : (mtlIoR / sd.IoR);;
-        standerdBSDF.data.transmission = mtlTransmission;
-        standerdBSDF.data.diffuseTransmission = mtlDiffTrans;
-        standerdBSDF.data.specularTransmission = mtlSpecTrans;
-    }
-
-    float primaryHitRoughness = standerdBSDF.data.roughness;
-    float3 irradiance = 0;
-    float hitTForNRD = 0.0;
-    
-
-    uint pathBounce = 1;
-    uint MAX_BOUNCE = gBounceNum;
 
 
     uint pathID = pixelPos.x | (pixelPos.y << 12);
@@ -348,7 +410,12 @@ void main( uint2 pixelPos : SV_DispatchThreadId )
 
     gPathTracer.generatePath(pathID, path);                                          // generate path from camera
     //gPathTracer.setupPathLogging(path);
-    gPathTracer.handleHit(path, geometryProps0, standerdBSDF.data, vq);              // handle primary hit
+
+
+    // primay ray hit
+    FalcorPayload primaryFalcorPayload = PrepareForPrimaryRayPayload(pixelPos, viewZ);
+
+    gPathTracer.handleHit(path, primaryFalcorPayload, vq);                           // handle primary hit
 
     while (path.isActive())                                                          // handle path trace
     {
@@ -369,6 +436,9 @@ void main( uint2 pixelPos : SV_DispatchThreadId )
 
             float2 mipAndCone = GetConeAngleFromRoughness(path.mip, path.roughness);         ///!!!TODO
             GeometryProps geometryProps0 = CastRay(ray.Origin, ray.Direction, ray.TMin, ray.TMax, mipAndCone, gWorldTlas, GEOMETRY_IGNORE_TRANSPARENT, 0, 0);
+            FalcorPayload falcorPayload = FillFalcorPayloadAfterTrace(geometryProps0);
+
+
             float hitT = geometryProps0.tmin;
 
             
@@ -392,14 +462,9 @@ void main( uint2 pixelPos : SV_DispatchThreadId )
 
                 //gPathTracer.setupPathLogging(path);
                 //VisibilityQuery vq;
-                gPathTracer.handleHit(path, geometryProps0, standerdBSDF.data, vq);
+                gPathTracer.handleHit(path, falcorPayload, vq);
             }
         }
-
-
-        //pathBounce++;
-        //if (pathBounce > MAX_BOUNCE)
-        //    break;
     }
 
     // output nrd
@@ -408,14 +473,21 @@ void main( uint2 pixelPos : SV_DispatchThreadId )
         bool isSample1Diffuse = path.outIsDiffsue;
 
 
-        irradiance = path.L;
+        float3 irradiance = path.L;
 
         // De-modulate materials for denoising
-        irradiance /= isSample1Diffuse ? albedo0 : envBRDF0;
+        float3 V = GetViewVector(primaryFalcorPayload.X);
+        float3 N = primaryFalcorPayload.N;
+        float NoV0 = abs(dot(N, V));
+
+        float3 envBRDF0 = STL::BRDF::EnvironmentTerm_Ross(primaryFalcorPayload.specular, NoV0, primaryFalcorPayload.roughness);
+        envBRDF0 = max(envBRDF0, 0.001);
+
+        irradiance /= isSample1Diffuse ? primaryFalcorPayload.diffuse : envBRDF0;
 
 
 
-        float normDist = REBLUR_FrontEnd_GetNormHitDist(pathLengthMod, viewZ, gHitDistParams, isSample1Diffuse ? 1.0 : normalAndRoughness.w);
+        float normDist = REBLUR_FrontEnd_GetNormHitDist(pathLengthMod, viewZ, gHitDistParams, isSample1Diffuse ? 1.0 : primaryFalcorPayload.roughness);
         float4 nrdData = REBLUR_FrontEnd_PackRadianceAndHitDist(irradiance, normDist, USE_SANITIZATION);
         if (gDenoiserType != REBLUR)
             nrdData = RELAX_FrontEnd_PackRadianceAndHitDist(irradiance, pathLengthMod, USE_SANITIZATION);

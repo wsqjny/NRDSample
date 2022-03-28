@@ -1,14 +1,14 @@
 #pragma once
 
 // see MaterialFactory.slang
-ShadingData loadShadingData(GeometryProps geometryProps)
+ShadingData loadShadingData(FalcorPayload payload)
 {
 	ShadingData sd;
-	sd.posW = geometryProps.X;
-	sd.V = -geometryProps.rayDirection;
+	sd.posW = payload.X;
+	sd.V = -payload.rayDirection;
 
-	sd.N = geometryProps.N;
-	sd.faceN = geometryProps.faceN;
+	sd.N = payload.N;
+	sd.faceN = payload.faceN;
 	sd.frontFacing = sd.frontFacing = dot(sd.V, sd.faceN) >= 0.f;
 
 	// Assume the default IoR for vacuum on the front-facing side.

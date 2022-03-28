@@ -520,7 +520,7 @@ struct PathTracer
     \param[in,out] path The path state.
     \param[in,out] vq Visibility query.
 */
-    void handleHit(inout PathState path, const GeometryProps geometryProps0, const StandardBSDFData primaryBSDFData, const VisibilityQuery vq)
+    void handleHit(inout PathState path, const FalcorPayload falcorPayload, const VisibilityQuery vq)
     {
         // Upon hit:
         // - Load vertex/material data
@@ -533,20 +533,14 @@ struct PathTracer
 
         // Load shading data. This is a long latency operation.
         //ShadingData sd = loadShadingData(path.hit, path.origin, path.dir, isPrimaryHit, lod);
-        ShadingData sd = loadShadingData(geometryProps0);
+        ShadingData sd = loadShadingData(falcorPayload);
 
         // Create BSDF instance and query its properties.
         // const IBSDF bsdf = gScene.materials.getBSDF(sd, lod);
         
-        StandardBSDF bsdf = (StandardBSDF)0;
-        if (isPrimaryHit)
-        {
-            bsdf.data = primaryBSDFData;
-        }
-        else
-        {
-            bsdf.data = GetStanderdBSDFData(geometryProps0, sd);
-        }
+        StandardBSDF bsdf = (StandardBSDF)0;        
+        bsdf.data = LoadStanderdBSDFData(falcorPayload, sd);
+        
         BSDFProperties bsdfProperties = bsdf.getProperties(sd);
 
         // Disable specular lobes if caustics are disabled and path already contains a diffuse vertex.
@@ -739,7 +733,7 @@ struct PathTracer
 
 
         // TODO: jn
-        path.mip = geometryProps0.mip;
+        path.mip = 0;// geometryProps0.mip;
         path.roughness = bsdf.data.roughness;
     }
 
