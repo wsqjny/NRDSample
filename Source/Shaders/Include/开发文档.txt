@@ -1,3 +1,24 @@
+2022-03-28 更新：
+新增FalcorPayload 结构 及其 set 函数，包含了碰撞点的几何和材质信息。 作为pt 运行时资源。 每次Trace 发生hit 时，需要主动填充这个结构。
+
+集成步骤：
+1. 拷贝所有FalcorXXX.hlsli 文件到一个目录中。
+2. 写 IndirectRay cs
+3. load primary ray 信息， 检测 gbuffer 输出是否正常。
+4. 根据引擎自己情况，重写PrepareForPrimaryRayPayload() 函数。 为pt 准备 primary ray hit 点的资源。
+5. 创建pt 对象，生成camera ray。generatePath()
+6. 写pt 主循环， pt handle hit 会根据当前碰撞点信息，对碰撞点进行bsdf 采样，生成新的光线：  path.getScatterRay();
+7. trace 新光线
+	发生碰撞时， 重写FillFalcorPayloadAfterTrace() 函数， 并交给pt 去迭代。
+	未发生碰撞， pt 执行handle miss, 并退出循环。
+8. path.L 记录了一条路径累积贡献，可直接输出，调试。
+9. 封装nrd 所需的两张贴图，nrd 执行降噪。
+
+
+
+
+
+
 2022-03-23 更新：
 1. Delta transmission 验证通过
 
