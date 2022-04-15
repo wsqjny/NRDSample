@@ -117,6 +117,8 @@ enum class Texture : uint32_t
     Tex_FPT_SampleHitDist,
     Tex_FPT_SampleEmission,
     Tex_FPT_SampleReflectance,
+    Tex_FPT_SampleDiffuseRadianceHitDist,
+    Tex_FPT_SampleSpecularRadianceHitDist,
 
     Tex_FPT_primaryHitEmission,
     Tex_FPT_primaryHitDiffuseReflectance,
@@ -128,6 +130,13 @@ enum class Texture : uint32_t
     Tex_FPT_DeltaReflectionNormWRoughMaterialID,
     Tex_FPT_DeltaReflectionPathLength,
     Tex_FPT_DeltaReflectionHitDist,
+
+    Tex_FPT_DeltaTransmissionRadianceHitDist,
+    Tex_FPT_DeltaTransmissionReflectance,
+    Tex_FPT_DeltaTransmissionEmission,
+    Tex_FPT_DeltaTransmissionNormWRoughMaterialID,
+    Tex_FPT_DeltaTransmissionPathLength,
+    Tex_FPT_DeltaTransmissionHitDist,
 
     // Read-only
     NisData1,
@@ -142,9 +151,10 @@ enum class Pipeline : uint32_t
     PrimaryRays,
     DirectLighting,
     IndirectRays,
-    PathTracer_TracePass,
-    PathTracer_TraceDeltaReflectionPass,
-    PathTracer_TraceDeltaTransmissionPass,
+    FalcorPT_TracePass,
+    FalcorPT_TraceDeltaReflectionPass,
+    FalcorPT_TraceDeltaTransmissionPass,
+    FalcorPT_Resolve,
     Composition,
     Temporal,
     Upsample,
@@ -225,9 +235,11 @@ enum class Descriptor : uint32_t
     FALCOR_TEX_DESCRIPTOR(SampleHitDist)
     FALCOR_TEX_DESCRIPTOR(SampleEmission)
     FALCOR_TEX_DESCRIPTOR(SampleReflectance)
+    FALCOR_TEX_DESCRIPTOR(SampleDiffuseRadianceHitDist)
+    FALCOR_TEX_DESCRIPTOR(SampleSpecularRadianceHitDist)
 
-    FALCOR_TEX_DESCRIPTOR(primaryHitEmission)
-    FALCOR_TEX_DESCRIPTOR(primaryHitDiffuseReflectance)
+    FALCOR_TEX_DESCRIPTOR(PrimaryHitEmission)
+    FALCOR_TEX_DESCRIPTOR(PrimaryHitDiffuseReflectance)
     FALCOR_TEX_DESCRIPTOR(PrimaryHitSpecularReflectance)
 
     FALCOR_TEX_DESCRIPTOR(DeltaReflectionRadianceHitDist)
@@ -236,6 +248,13 @@ enum class Descriptor : uint32_t
     FALCOR_TEX_DESCRIPTOR(DeltaReflectionNormWRoughMaterialID)
     FALCOR_TEX_DESCRIPTOR(DeltaReflectionPathLength)
     FALCOR_TEX_DESCRIPTOR(DeltaReflectionHitDist)
+
+    FALCOR_TEX_DESCRIPTOR(DeltaTransmissionRadianceHitDist)
+    FALCOR_TEX_DESCRIPTOR(DeltaTransmissionReflectance)
+    FALCOR_TEX_DESCRIPTOR(DeltaTransmissionEmission)
+    FALCOR_TEX_DESCRIPTOR(DeltaTransmissionNormWRoughMaterialID)
+    FALCOR_TEX_DESCRIPTOR(DeltaTransmissionPathLength)
+    FALCOR_TEX_DESCRIPTOR(DeltaTransmissionHitDist)
 
 
     // Read-only
@@ -252,6 +271,7 @@ enum class DescriptorSet : uint32_t
     DirectLighting1,
     IndirectRays1,
     FalcorPathTracer,
+    FalcorPTResolve,
     Composition1,
     Temporal1a,
     Temporal1b,
@@ -1951,22 +1971,32 @@ void Sample::CreateResources(nri::Format swapChainFormat)
     { kOutputNRDDeltaTransmissionPosW,                  "",     "Output delta transmission position", true /* optional */, ResourceFormat::RGBA32Float },
     { kOutputNRDResidualRadianceHitDist,                "",     "Output residual color (linear) and hit distance", true /* optional */, ResourceFormat::RGBA32Float },
 #endif
-                
-    CreateTexture(descriptorDescs, "Texture::FPT_SampleRadiance",                       nri::Format::RGBA32_SFLOAT, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
-    CreateTexture(descriptorDescs, "Texture::FPT_SampleHitDist",                        nri::Format::R16_SFLOAT, w, h, 1, 1,    nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
-    CreateTexture(descriptorDescs, "Texture::FPT_SampleEmission",                       nri::Format::RGBA32_SFLOAT, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
-    CreateTexture(descriptorDescs, "Texture::FPT_SampleReflectance",                    nri::Format::RGBA16_SFLOAT, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
+
+    nri::TextureUsageBits FalcorPTTextureUsageBits = nri::TextureUsageBits::SHADER_RESOURCE | nri::TextureUsageBits::SHADER_RESOURCE_STORAGE;
+    CreateTexture(descriptorDescs, "Texture::FPT_SampleRadiance",                       nri::Format::RGBA32_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_SampleHitDist",                        nri::Format::R16_SFLOAT, w, h, 1, 1,    FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_SampleEmission",                       nri::Format::RGBA32_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_SampleReflectance",                    nri::Format::RGBA16_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_SampleDiffuseRadianceHitDist",         nri::Format::RGBA32_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_SampleSpecularRadianceHitDist",        nri::Format::RGBA32_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
     
-    CreateTexture(descriptorDescs, "Texture::FPT_primaryHitEmission",                   nri::Format::RGBA32_SFLOAT, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
-    CreateTexture(descriptorDescs, "Texture::FPT_primaryHitDiffuseReflectance",         nri::Format::RGBA16_SFLOAT, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
-    CreateTexture(descriptorDescs, "Texture::FPT_PrimaryHitSpecularReflectance",        nri::Format::RGBA16_SFLOAT, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_primaryHitEmission",                   nri::Format::RGBA32_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_primaryHitDiffuseReflectance",         nri::Format::RGBA16_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_PrimaryHitSpecularReflectance",        nri::Format::RGBA16_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
                                              
-    CreateTexture(descriptorDescs, "Texture::FPT_DeltaReflectionRadianceHitDist",       nri::Format::RGBA32_SFLOAT, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
-    CreateTexture(descriptorDescs, "Texture::FPT_DeltaReflectionReflectance",           nri::Format::RGBA16_SFLOAT, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
-    CreateTexture(descriptorDescs, "Texture::FPT_DeltaReflectionEmission",              nri::Format::RGBA32_SFLOAT, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
-    CreateTexture(descriptorDescs, "Texture::FPT_DeltaReflectionNormWRoughMaterialID",  nri::Format::R10_G10_B10_A2_UNORM, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
-    CreateTexture(descriptorDescs, "Texture::FPT_DeltaReflectionPathLength",            nri::Format::R16_SFLOAT, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
-    CreateTexture(descriptorDescs, "Texture::FPT_DeltaReflectionHitDist",               nri::Format::R16_SFLOAT, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_DeltaReflectionRadianceHitDist",       nri::Format::RGBA32_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_DeltaReflectionReflectance",           nri::Format::RGBA16_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_DeltaReflectionEmission",              nri::Format::RGBA32_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_DeltaReflectionNormWRoughMaterialID",  nri::Format::R10_G10_B10_A2_UNORM, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_DeltaReflectionPathLength",            nri::Format::R16_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_DeltaReflectionHitDist",               nri::Format::R16_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
+
+    CreateTexture(descriptorDescs, "Texture::FPT_DeltaTransmissionRadianceHitDist",     nri::Format::RGBA32_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_DeltaTransmissionReflectance",         nri::Format::RGBA16_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_DeltaTransmissionEmission",            nri::Format::RGBA32_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_DeltaTransmissionNormWRoughMaterialID",nri::Format::R10_G10_B10_A2_UNORM, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_DeltaTransmissionPathLength",          nri::Format::R16_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_DeltaTransmissionHitDist",             nri::Format::R16_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
     ///-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
     // Read-only
@@ -2207,11 +2237,11 @@ void Sample::CreatePipelines()
         m_Pipelines.push_back(pipeline);
     }
 
-    { // Pipeline::FalcorPathTracer: PathTracer_TracePass
+    { // Pipeline::FalcorPathTracer:Pipline_FalcorPT_TracePass
         const nri::DescriptorRangeDesc descriptorRanges1[] =
         {
             { 0, 7, nri::DescriptorType::TEXTURE, nri::ShaderStage::ALL },
-            { 7, 7, nri::DescriptorType::STORAGE_TEXTURE, nri::ShaderStage::ALL }
+            { 7, 17, nri::DescriptorType::STORAGE_TEXTURE, nri::ShaderStage::ALL }
         };
 
         const nri::DescriptorSetDesc descriptorSetDesc[] =
@@ -2237,11 +2267,11 @@ void Sample::CreatePipelines()
         m_Pipelines.push_back(pipeline);
     }
 
-    { // Pipeline::FalcorPathTracer: PathTracer_TraceDeltaReflectionPass
+    { // Pipeline::FalcorPathTracer:Pipline_FalcorPT_TraceDeltaReflectionPass
         const nri::DescriptorRangeDesc descriptorRanges1[] =
         {
             { 0, 7, nri::DescriptorType::TEXTURE, nri::ShaderStage::ALL },
-            { 7, 7, nri::DescriptorType::STORAGE_TEXTURE, nri::ShaderStage::ALL }
+            { 7, 17, nri::DescriptorType::STORAGE_TEXTURE, nri::ShaderStage::ALL }
         };
 
         const nri::DescriptorSetDesc descriptorSetDesc[] =
@@ -2267,11 +2297,11 @@ void Sample::CreatePipelines()
         m_Pipelines.push_back(pipeline);
     }
 
-    { // Pipeline::FalcorPathTracer: PathTracer_TraceDeltaTransmissionPass
+    { // Pipeline::FalcorPathTracer:Pipline_FalcorPT_TraceDeltaTransmissionPass
         const nri::DescriptorRangeDesc descriptorRanges1[] =
         {
             { 0, 7, nri::DescriptorType::TEXTURE, nri::ShaderStage::ALL },
-            { 7, 7, nri::DescriptorType::STORAGE_TEXTURE, nri::ShaderStage::ALL }
+            { 7, 17, nri::DescriptorType::STORAGE_TEXTURE, nri::ShaderStage::ALL }
         };
 
         const nri::DescriptorSetDesc descriptorSetDesc[] =
@@ -2292,6 +2322,35 @@ void Sample::CreatePipelines()
         nri::ComputePipelineDesc pipelineDesc = {};
         pipelineDesc.pipelineLayout = pipelineLayout;
         pipelineDesc.computeShader = utils::LoadShader(m_DeviceDesc->graphicsAPI, "FalcorTracePathRT.cs", shaderCodeStorage);
+
+        NRI_ABORT_ON_FAILURE(NRI.CreateComputePipeline(*m_Device, pipelineDesc, pipeline));
+        m_Pipelines.push_back(pipeline);
+    }
+
+    { // Pipeline::FalcorPT_Resolve
+        const nri::DescriptorRangeDesc descriptorRanges1[] =
+        {
+            { 0, 4, nri::DescriptorType::TEXTURE, nri::ShaderStage::ALL },
+            { 4, 4, nri::DescriptorType::STORAGE_TEXTURE, nri::ShaderStage::ALL }
+        };
+
+        const nri::DescriptorSetDesc descriptorSetDesc[] =
+        {
+            { descriptorRanges0, helper::GetCountOf(descriptorRanges0), staticSamplersDesc, helper::GetCountOf(staticSamplersDesc) },
+            { descriptorRanges1, helper::GetCountOf(descriptorRanges1) },
+        };
+
+        nri::PipelineLayoutDesc pipelineLayoutDesc = {};
+        pipelineLayoutDesc.descriptorSets = descriptorSetDesc;
+        pipelineLayoutDesc.descriptorSetNum = helper::GetCountOf(descriptorSetDesc);
+        pipelineLayoutDesc.stageMask = nri::PipelineLayoutShaderStageBits::COMPUTE;
+
+        NRI_ABORT_ON_FAILURE(NRI.CreatePipelineLayout(*m_Device, pipelineLayoutDesc, pipelineLayout));
+        m_PipelineLayouts.push_back(pipelineLayout);
+
+        nri::ComputePipelineDesc pipelineDesc = {};
+        pipelineDesc.pipelineLayout = pipelineLayout;
+        pipelineDesc.computeShader = utils::LoadShader(m_DeviceDesc->graphicsAPI, "FalcorPTResolve.cs", shaderCodeStorage);
 
         NRI_ABORT_ON_FAILURE(NRI.CreateComputePipeline(*m_Device, pipelineDesc, pipeline));
         m_Pipelines.push_back(pipeline);
@@ -2300,8 +2359,8 @@ void Sample::CreatePipelines()
     { // Pipeline::Composition
         const nri::DescriptorRangeDesc descriptorRanges1[] =
         {
-            { 0, 10, nri::DescriptorType::TEXTURE, nri::ShaderStage::ALL },
-            { 10, 1, nri::DescriptorType::STORAGE_TEXTURE, nri::ShaderStage::ALL }
+            { 0, 9, nri::DescriptorType::TEXTURE, nri::ShaderStage::ALL },
+            { 9, 1, nri::DescriptorType::STORAGE_TEXTURE, nri::ShaderStage::ALL }
         };
 
         const nri::DescriptorSetDesc descriptorSetDesc[] =
@@ -2629,7 +2688,7 @@ void Sample::CreateDescriptorSets()
     }
 
     { // DescriptorSet::FalcorPathTracer
-        NRI_ABORT_ON_FAILURE(NRI.AllocateDescriptorSets(*m_DescriptorPool, *GetPipelineLayout(Pipeline::IndirectRays), 1, &descriptorSet, 1, nri::WHOLE_DEVICE_GROUP, 0));
+        NRI_ABORT_ON_FAILURE(NRI.AllocateDescriptorSets(*m_DescriptorPool, *GetPipelineLayout(Pipeline::FalcorPT_TracePass), 1, &descriptorSet, 1, nri::WHOLE_DEVICE_GROUP, 0));
         m_DescriptorSets.push_back(descriptorSet);
 
         const nri::Descriptor* textures[] =
@@ -2650,8 +2709,8 @@ void Sample::CreateDescriptorSets()
             Get(Descriptor::Desc_FPT_SampleEmission_StorageTexture),
             Get(Descriptor::Desc_FPT_SampleReflectance_StorageTexture),
 
-            Get(Descriptor::Desc_FPT_primaryHitEmission_StorageTexture),
-            Get(Descriptor::Desc_FPT_primaryHitDiffuseReflectance_StorageTexture),
+            Get(Descriptor::Desc_FPT_PrimaryHitEmission_StorageTexture),
+            Get(Descriptor::Desc_FPT_PrimaryHitDiffuseReflectance_StorageTexture),
             Get(Descriptor::Desc_FPT_PrimaryHitSpecularReflectance_StorageTexture),
 
             Get(Descriptor::Desc_FPT_DeltaReflectionReflectance_StorageTexture),
@@ -2659,6 +2718,41 @@ void Sample::CreateDescriptorSets()
             Get(Descriptor::Desc_FPT_DeltaReflectionNormWRoughMaterialID_StorageTexture),
             Get(Descriptor::Desc_FPT_DeltaReflectionPathLength_StorageTexture),
             Get(Descriptor::Desc_FPT_DeltaReflectionHitDist_StorageTexture),
+
+            Get(Descriptor::Desc_FPT_DeltaTransmissionReflectance_StorageTexture),
+            Get(Descriptor::Desc_FPT_DeltaTransmissionEmission_StorageTexture),
+            Get(Descriptor::Desc_FPT_DeltaTransmissionNormWRoughMaterialID_StorageTexture),
+            Get(Descriptor::Desc_FPT_DeltaTransmissionPathLength_StorageTexture),
+            Get(Descriptor::Desc_FPT_DeltaTransmissionHitDist_StorageTexture),
+        };
+
+        const nri::DescriptorRangeUpdateDesc descriptorRangeUpdateDesc[] =
+        {
+            { textures, helper::GetCountOf(textures) },
+            { storageTextures, helper::GetCountOf(storageTextures) },
+        };
+
+        NRI.UpdateDescriptorRanges(*descriptorSet, nri::WHOLE_DEVICE_GROUP, 0, helper::GetCountOf(descriptorRangeUpdateDesc), descriptorRangeUpdateDesc);
+    }
+
+    { // DescriptorSet::FalcorPT_Resolve
+        NRI_ABORT_ON_FAILURE(NRI.AllocateDescriptorSets(*m_DescriptorPool, *GetPipelineLayout(Pipeline::FalcorPT_Resolve), 1, &descriptorSet, 1, nri::WHOLE_DEVICE_GROUP, 0));
+        m_DescriptorSets.push_back(descriptorSet);
+
+        const nri::Descriptor* textures[] =
+        {
+            Get(Descriptor::Desc_FPT_SampleRadiance_Texture),
+            Get(Descriptor::Desc_FPT_SampleHitDist_Texture),
+            Get(Descriptor::Desc_FPT_SampleEmission_Texture),
+            Get(Descriptor::Desc_FPT_SampleReflectance_Texture),
+        };
+
+        const nri::Descriptor* storageTextures[] =
+        {
+            Get(Descriptor::Desc_FPT_SampleDiffuseRadianceHitDist_StorageTexture),
+            Get(Descriptor::Desc_FPT_SampleSpecularRadianceHitDist_StorageTexture),
+            Get(Descriptor::Desc_FPT_DeltaReflectionRadianceHitDist_StorageTexture),
+            Get(Descriptor::Desc_FPT_DeltaTransmissionRadianceHitDist_StorageTexture),
         };
 
         const nri::DescriptorRangeUpdateDesc descriptorRangeUpdateDesc[] =
@@ -2683,9 +2777,8 @@ void Sample::CreateDescriptorSets()
             Get(Descriptor::DirectLighting_Texture),
             Get(Descriptor::Ambient_Texture),
             Get(Descriptor::IntegrateBRDF_Texture),
-            Get(Descriptor::Diff_Texture),
-            Get(Descriptor::Spec_Texture),
-            Get(Descriptor::Desc_FPT_primaryHitDiffuseReflectance_StorageTexture),
+            Get(Descriptor::Desc_FPT_SampleDiffuseRadianceHitDist_Texture),
+            Get(Descriptor::Desc_FPT_SampleSpecularRadianceHitDist_Texture),
         };
 
         const nri::Descriptor* storageTextures[] =
@@ -4443,21 +4536,35 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
                 {Texture::ComposedLighting_ViewZ, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
                 {Texture::Ambient, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
                 {Texture::Motion, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
+
                 // Output
-                {Texture::Unfiltered_Diff, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
-                {Texture::Unfiltered_Spec, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
-                {Texture::DiffDirectionPdf, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
-                {Texture::SpecDirectionPdf, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
-                {Texture::Downsampled_ViewZ, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
-                {Texture::Downsampled_Motion, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
-                {Texture::Downsampled_Normal_Roughness, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+                {Texture::Tex_FPT_SampleRadiance, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+                {Texture::Tex_FPT_SampleHitDist, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+                {Texture::Tex_FPT_SampleEmission, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+                {Texture::Tex_FPT_SampleReflectance, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+                
+                {Texture::Tex_FPT_primaryHitEmission, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+                {Texture::Tex_FPT_primaryHitDiffuseReflectance, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+                {Texture::Tex_FPT_PrimaryHitSpecularReflectance, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+
+                {Texture::Tex_FPT_DeltaReflectionReflectance, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+                {Texture::Tex_FPT_DeltaReflectionEmission, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+                {Texture::Tex_FPT_DeltaReflectionNormWRoughMaterialID, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+                {Texture::Tex_FPT_DeltaReflectionPathLength, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+                {Texture::Tex_FPT_DeltaReflectionHitDist, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+
+                {Texture::Tex_FPT_DeltaTransmissionReflectance, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+                {Texture::Tex_FPT_DeltaTransmissionEmission, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+                {Texture::Tex_FPT_DeltaTransmissionNormWRoughMaterialID, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+                {Texture::Tex_FPT_DeltaTransmissionPathLength, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+                {Texture::Tex_FPT_DeltaTransmissionHitDist, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
             };
             transitionBarriers.textures = optimizedTransitions.data();
             transitionBarriers.textureNum = BuildOptimizedTransitions(transitions, helper::GetCountOf(transitions), optimizedTransitions.data(), helper::GetCountOf(optimizedTransitions));
             NRI.CmdPipelineBarrier(commandBuffer, &transitionBarriers, nullptr, nri::BarrierDependency::ALL_STAGES);
 
-            NRI.CmdSetPipelineLayout(commandBuffer, *GetPipelineLayout(Pipeline::PathTracer_TracePass));
-            NRI.CmdSetPipeline(commandBuffer, *Get(Pipeline::PathTracer_TracePass));
+            NRI.CmdSetPipelineLayout(commandBuffer, *GetPipelineLayout(Pipeline::FalcorPT_TracePass));
+            NRI.CmdSetPipeline(commandBuffer, *Get(Pipeline::FalcorPT_TracePass));
 
             const nri::DescriptorSet* descriptorSets[] = { frame.globalConstantBufferDescriptorSet, Get(DescriptorSet::FalcorPathTracer), Get(DescriptorSet::RayTracing2) };
             NRI.CmdSetDescriptorSets(commandBuffer, 0, helper::GetCountOf(descriptorSets), descriptorSets, nullptr);
@@ -4470,6 +4577,39 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
             NRI.CmdDispatch(commandBuffer, rectGridWmod, rectGridHmod, 1);
         }
 
+        { // Falcor Resolve
+            helper::Annotation annotation(NRI, commandBuffer, "FalcorResolvePass");
+
+            const TextureState transitions[] =
+            {
+                // Input
+                {Texture::Tex_FPT_SampleRadiance, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
+                {Texture::Tex_FPT_SampleHitDist, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
+                {Texture::Tex_FPT_SampleEmission, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
+                {Texture::Tex_FPT_SampleReflectance, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
+                
+                
+                // Output
+                {Texture::Tex_FPT_SampleDiffuseRadianceHitDist, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+                {Texture::Tex_FPT_SampleSpecularRadianceHitDist, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+                {Texture::Tex_FPT_DeltaReflectionRadianceHitDist, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+                {Texture::Tex_FPT_DeltaTransmissionRadianceHitDist, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+            };
+
+            transitionBarriers.textures = optimizedTransitions.data();
+            transitionBarriers.textureNum = BuildOptimizedTransitions(transitions, helper::GetCountOf(transitions), optimizedTransitions.data(), helper::GetCountOf(optimizedTransitions));
+            NRI.CmdPipelineBarrier(commandBuffer, &transitionBarriers, nullptr, nri::BarrierDependency::ALL_STAGES);
+
+            NRI.CmdSetPipelineLayout(commandBuffer, *GetPipelineLayout(Pipeline::FalcorPT_Resolve));
+            NRI.CmdSetPipeline(commandBuffer, *Get(Pipeline::FalcorPT_Resolve));
+
+            const nri::DescriptorSet* descriptorSets[] = { frame.globalConstantBufferDescriptorSet, Get(DescriptorSet::FalcorPTResolve) };
+            NRI.CmdSetDescriptorSets(commandBuffer, 0, helper::GetCountOf(descriptorSets), descriptorSets, nullptr);
+
+            NRI.CmdDispatch(commandBuffer, rectGridW, rectGridH, 1);
+        }
+
+#if 0
         { // Diffuse & specular indirect lighting denoising
             helper::Annotation annotation(NRI, commandBuffer, "Indirect lighting denoising");
 
@@ -4598,7 +4738,7 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
             // NRD integration layer binds its own descriptor pool, we need to re-bind ours back
             NRI.CmdSetDescriptorPool(commandBuffer, *m_DescriptorPool);
         }
-
+#endif
         { // Composition
             helper::Annotation annotation(NRI, commandBuffer, "Composition");
 
@@ -4611,8 +4751,8 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
                 {Texture::BaseColor_Metalness, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
                 {Texture::DirectLighting, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
                 {Texture::Ambient, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
-                {Texture::Diff, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
-                {Texture::Spec, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
+                {Texture::Tex_FPT_SampleDiffuseRadianceHitDist, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
+                {Texture::Tex_FPT_SampleSpecularRadianceHitDist, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
                 // Output
                 {Texture::ComposedLighting_ViewZ, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
             };
