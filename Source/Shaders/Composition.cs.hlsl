@@ -11,169 +11,95 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 #include "Shared.hlsli"
 
 // Inputs
-NRI_RESOURCE( Texture2D<float>, gIn_ViewZ, t, 0, 1 );
-NRI_RESOURCE( Texture2D<float>, gIn_Downsampled_ViewZ, t, 1, 1 );
-NRI_RESOURCE( Texture2D<float4>, gIn_Normal_Roughness, t, 2, 1 );
-NRI_RESOURCE( Texture2D<float4>, gIn_BaseColor_Metalness, t, 3, 1 );
-NRI_RESOURCE( Texture2D<float4>, gIn_DirectLighting_ViewZ, t, 4, 1 );
-NRI_RESOURCE( Texture2D<float3>, gIn_Ambient, t, 5, 1 );
-NRI_RESOURCE( Texture2D<float2>, gIn_IntegratedBRDF, t, 6, 1 );
-NRI_RESOURCE( Texture2D<float4>, gIn_Diff, t, 7, 1 );
-NRI_RESOURCE( Texture2D<float4>, gIn_Spec, t, 8, 1 );
-
-NRI_RESOURCE(Texture2D<float4>, gIn_DeltaReflec, t, 9, 1);
-//NRI_RESOURCE(Texture2D<float4>, gIn_Spec, t, 8, 1);
+NRI_RESOURCE( Texture2D<float4>, gEmission,						t, 0, 1 );
+NRI_RESOURCE( Texture2D<float4>, gDiffuseReflectance,			t, 1, 1 );
+NRI_RESOURCE( Texture2D<float4>, gDiffuseRadiance,				t, 2, 1);
+NRI_RESOURCE( Texture2D<float4>, gSpecularReflectance,			t, 3, 1);
+NRI_RESOURCE( Texture2D<float4>, gSpecularRadiance,				t, 4, 1);
+NRI_RESOURCE( Texture2D<float4>, gDeltaReflectionEmission,		t, 5, 1);
+NRI_RESOURCE( Texture2D<float4>, gDeltaReflectionReflectance,	t, 6, 1);
+NRI_RESOURCE( Texture2D<float4>, gDeltaReflectionRadiance,		t, 7, 1);
+NRI_RESOURCE( Texture2D<float4>, gDeltaTransmissionEmission,	t, 8, 1);
+NRI_RESOURCE( Texture2D<float4>, gDeltaTransmissionReflectance, t, 9, 1);
+NRI_RESOURCE( Texture2D<float4>, gDeltaTransmissionRadiance,	t, 10, 1);
 
 // Outputs
-NRI_RESOURCE( RWTexture2D<float4>, gOut_ComposedImage, u, 10, 1 );
+NRI_RESOURCE( RWTexture2D<float4>, gOutput, u, 11, 1 );
 
-float4 Upsample( Texture2D<float4> tex, float2 pixelUv, float zReal )
+
+bool is_valid(Texture2D tex)
 {
-    // Set to 1 if you don't use a quarter part of the full texture
-    float2 RESOLUTION_SCALE = 0.5 * gRectSize * gInvScreenSize;
-
-    float4 zLow = gIn_Downsampled_ViewZ.GatherRed( gNearestMipmapNearestSampler, pixelUv * RESOLUTION_SCALE );
-    float4 delta = abs( zReal - zLow ) / zReal;
-
-    float4 offsets = float4( -1.0, 1.0, -1.0, 1.0 ) * gInvRectSize.xxyy;
-    float3 d01 = float3( offsets.xw, delta.x );
-    float3 d11 = float3( offsets.yw, delta.y );
-    float3 d10 = float3( offsets.yz, delta.z );
-    float3 d00 = float3( offsets.xz, delta.w );
-
-    d00 = lerp( d01, d00, step( d00.z, d01.z ) );
-    d00 = lerp( d11, d00, step( d00.z, d11.z ) );
-    d00 = lerp( d10, d00, step( d00.z, d10.z ) );
-
-    float2 invTexSize = 2.0 * gInvRectSize;
-    float2 uvNearest = floor( ( pixelUv + d00.xy ) / invTexSize ) * invTexSize + gInvRectSize;
-
-    float2 uv = pixelUv * gRectSize / gScreenSize;
-    if( gTracingMode == RESOLUTION_QUARTER )
-    {
-        float4 cmp = step( 0.01, delta );
-        cmp.x = saturate( dot( cmp, 1.0 ) );
-
-        uv = lerp( pixelUv, uvNearest, cmp.x );
-        uv *= RESOLUTION_SCALE;
-    }
-
-    return tex.SampleLevel( gLinearSampler, uv, 0 );
+    return true;
 }
 
 [numthreads( 16, 16, 1)]
-void main( int2 pixelPos : SV_DispatchThreadId )
+void main( int2 dispatchThreadId : SV_DispatchThreadId )
 {
-    // Do not generate NANs for unused threads
-    if( pixelPos.x >= gRectSize.x || pixelPos.y >= gRectSize.y )
-        return;
+    const uint2 pixel = dispatchThreadId.xy;
+ 
+    float4 outputColor = 0.0;
 
-    float2 pixelUv = float2( pixelPos + 0.5 ) * gInvRectSize;
-    float2 sampleUv = pixelUv + gJitter;
-
-    // Early out - sky
-    float4 Ldirect = gIn_DirectLighting_ViewZ[ pixelPos ];
-    float viewZ = gIn_ViewZ[ pixelPos ];
-
-    if( abs( viewZ ) == INF )
+    if (is_valid(gEmission))
     {
-        Ldirect.xyz *= float( gOnScreen == SHOW_FINAL );
-        gOut_ComposedImage[ pixelPos ] = Ldirect;
-
-        return;
+        outputColor.rgb += gEmission[pixel].rgb;
     }
 
-    // G-buffer
-    float4 normalAndRoughness = NRD_FrontEnd_UnpackNormalAndRoughness( gIn_Normal_Roughness[ pixelPos ] );
-    float3 N = normalAndRoughness.xyz;
-    float roughness = normalAndRoughness.w;
-
-    float3 albedo, Rf0;
-    float4 baseColorMetalness = gIn_BaseColor_Metalness[ pixelPos ];
-    STL::BRDF::ConvertBaseColorMetalnessToAlbedoRf0( baseColorMetalness.xyz, baseColorMetalness.w, albedo, Rf0 );
-
-    float3 Xv = STL::Geometry::ReconstructViewPosition( sampleUv, gCameraFrustum, viewZ, gOrthoMode );
-    float3 X = STL::Geometry::RotateVector( gViewToWorld, Xv );
-    float3 V = GetViewVector( X );
-
-    // Denoised indirect lighting
-    float4 diffIndirect = Upsample( gIn_Diff, pixelUv, viewZ );
-    float4 specIndirect = Upsample( gIn_Spec, pixelUv, viewZ );
-
-    [flatten]
-    if( gOcclusionOnly )
+    if (is_valid(gDiffuseRadiance))
     {
-        diffIndirect = diffIndirect.xxxx;
-        specIndirect = specIndirect.xxxx;
+        float3 diffuseColor = gDiffuseRadiance[pixel].rgb;
+
+        if (is_valid(gDiffuseReflectance))
+        {
+            diffuseColor *= gDiffuseReflectance[pixel].rgb;
+        }
+        outputColor.rgb += diffuseColor;
     }
 
-    if( gDenoiserType != REBLUR )
+    if (is_valid(gSpecularRadiance))
     {
-        diffIndirect = RELAX_BackEnd_UnpackRadianceAndHitDist( diffIndirect );
-        specIndirect = RELAX_BackEnd_UnpackRadianceAndHitDist( specIndirect );
+        float3 specularColor = gSpecularRadiance[pixel].rgb;
 
-        // RELAX doesn't support AO/SO denoising, set to estimated integrated average
-        diffIndirect.w = 1.0 / STL::Math::Pi( 1.0 );
-        specIndirect.w = 1.0 / STL::Math::Pi( 1.0 );
-    }
-    else
-    {
-        diffIndirect = REBLUR_BackEnd_UnpackRadianceAndHitDist( diffIndirect );
-        specIndirect = REBLUR_BackEnd_UnpackRadianceAndHitDist( specIndirect );
+        if (is_valid(gSpecularReflectance))
+        {
+            specularColor *= gSpecularReflectance[pixel].rgb;
+        }
+
+        outputColor.rgb += specularColor;
     }
 
-    diffIndirect.xyz *= gIndirectDiffuse;
-    specIndirect.xyz *= gIndirectSpecular;
+    if (is_valid(gDeltaReflectionEmission))
+    {
+        outputColor.rgb += gDeltaReflectionEmission[pixel].rgb;
+    }
 
-    // Environment ( pre-integrated ) specular term
-    float NoV = abs( dot( N, V ) );
-    float3 F = STL::BRDF::EnvironmentTerm_Ross( Rf0, NoV, roughness );
+    if (is_valid(gDeltaReflectionRadiance))
+    {
+        float3 deltaReflectionColor = gDeltaReflectionRadiance[pixel].rgb;
 
-    // Add indirect lighting
-    float3 Lsum = Ldirect.xyz;
-    Lsum += diffIndirect.xyz * albedo;
-    Lsum += specIndirect.xyz * F;
+        if (is_valid(gDeltaReflectionReflectance))
+        {
+            deltaReflectionColor *= gDeltaReflectionReflectance[pixel].rgb;
+        }
 
-    // Add ambient // TODO: reduce if multi bounce?
-    float3 ambient = gIn_Ambient.SampleLevel( gLinearSampler, float2( 0.5, 0.5 ), 0 );
-    ambient *= exp2( AMBIENT_FADE * STL::Math::LengthSquared( X - gCameraOrigin ) );
-    ambient *= gAmbient;
+        outputColor.rgb += deltaReflectionColor;
+    }
 
-    float2 gg = gIn_IntegratedBRDF.SampleLevel( gLinearSampler, float2( NoV, roughness ), 0 );
-    diffIndirect.w *= gg.x;
-    specIndirect.w *= gg.y;
+    if (is_valid(gDeltaTransmissionEmission))
+    {
+        outputColor.rgb += gDeltaTransmissionEmission[pixel].rgb;
+    }
 
-    float m = roughness * roughness;
-    Lsum += ambient * diffIndirect.w * albedo * ( 1.0 - F );
-    Lsum += ambient * specIndirect.w * m * F;
+    if (is_valid(gDeltaTransmissionRadiance))
+    {
+        float3 deltaTransmissionColor = gDeltaTransmissionRadiance[pixel].rgb;
 
+        if (is_valid(gDeltaTransmissionReflectance))
+        {
+            deltaTransmissionColor *= gDeltaTransmissionReflectance[pixel].rgb;
+        }
 
-    float4 pt_delta_reflect = gIn_DeltaReflec[pixelPos];
+        outputColor.rgb += deltaTransmissionColor;
+    }
 
-    // Debug
-    if( gOnScreen == SHOW_DENOISED_DIFFUSE )
-        Lsum = diffIndirect.xyz;
-    else if( gOnScreen == SHOW_DENOISED_SPECULAR )
-        Lsum = specIndirect.xyz;
-    else if( gOnScreen == SHOW_AMBIENT_OCCLUSION )
-        Lsum = diffIndirect.w;
-    else if( gOnScreen == SHOW_SPECULAR_OCCLUSION )
-        Lsum = specIndirect.w;
-    else if( gOnScreen == SHOW_BASE_COLOR )
-        Lsum = baseColorMetalness.xyz;
-    else if( gOnScreen == SHOW_NORMAL )
-        Lsum = N * 0.5 + 0.5;
-    else if( gOnScreen == SHOW_ROUGHNESS )
-        Lsum = roughness;
-    else if( gOnScreen == SHOW_METALNESS )
-        Lsum = baseColorMetalness.w;
-    else if( gOnScreen == SHOW_WORLD_UNITS )
-        Lsum = frac( X * gUnitToMetersMultiplier );
-    else if( gOnScreen == SHOW_FPT_DELTA_REFLECTION )
-        Lsum = pt_delta_reflect.xyz;
-    else if( gOnScreen != SHOW_FINAL )
-        Lsum = gOnScreen == SHOW_MIP_SPECULAR ? specIndirect.xyz : Ldirect.xyz;
-
-    // Output
-    gOut_ComposedImage[ pixelPos ] = float4( Lsum, abs( viewZ ) * NRD_FP16_VIEWZ_SCALE * STL::Math::Sign( dot( N, gSunDirection ) ) );
+    gOutput[pixel] = outputColor;
 }

@@ -2392,8 +2392,8 @@ void Sample::CreatePipelines()
     { // Pipeline::Composition
         const nri::DescriptorRangeDesc descriptorRanges1[] =
         {
-            { 0, 9, nri::DescriptorType::TEXTURE, nri::ShaderStage::ALL },
-            { 9, 1, nri::DescriptorType::STORAGE_TEXTURE, nri::ShaderStage::ALL }
+            { 0, 11, nri::DescriptorType::TEXTURE, nri::ShaderStage::ALL },
+            { 11, 1, nri::DescriptorType::STORAGE_TEXTURE, nri::ShaderStage::ALL }
         };
 
         const nri::DescriptorSetDesc descriptorSetDesc[] =
@@ -2828,15 +2828,17 @@ void Sample::CreateDescriptorSets()
 
         const nri::Descriptor* textures[] =
         {
-            Get(Descriptor::ViewZ_Texture),
-            Get(Descriptor::Downsampled_ViewZ_Texture),
-            Get(Descriptor::Normal_Roughness_Texture),
-            Get(Descriptor::BaseColor_Metalness_Texture),
-            Get(Descriptor::DirectLighting_Texture),
-            Get(Descriptor::Ambient_Texture),
-            Get(Descriptor::IntegrateBRDF_Texture),
+            Get(Descriptor::Desc_FPT_PrimaryHitEmission_Texture),
+            Get(Descriptor::Desc_FPT_PrimaryHitDiffuseReflectance_Texture),
             Get(Descriptor::Diff_Texture),
+            Get(Descriptor::Desc_FPT_PrimaryHitSpecularReflectance_Texture),
             Get(Descriptor::Spec_Texture),
+            Get(Descriptor::Desc_FPT_DeltaReflectionEmission_Texture),
+            Get(Descriptor::Desc_FPT_DeltaReflectionReflectance_Texture),
+            Get(Descriptor::Desc_FPT_DeltaReflectionRadianceHitDist_Texture),
+            Get(Descriptor::Desc_FPT_DeltaTransmissionEmission_Texture),
+            Get(Descriptor::Desc_FPT_DeltaTransmissionReflectance_Texture),
+            Get(Descriptor::Desc_FPT_DeltaTransmissionRadianceHitDist_Texture),            
         };
 
         const nri::Descriptor* storageTextures[] =
@@ -4830,14 +4832,20 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
             const TextureState transitions[] =
             {
                 // Input
-                {Texture::ViewZ, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
-                {Texture::Downsampled_ViewZ, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
-                {Texture::Normal_Roughness, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
-                {Texture::BaseColor_Metalness, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
-                {Texture::DirectLighting, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
-                {Texture::Ambient, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
+                {Texture::Tex_FPT_primaryHitEmission, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
+                {Texture::Tex_FPT_primaryHitDiffuseReflectance, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
                 {Texture::Diff, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
+                {Texture::Tex_FPT_PrimaryHitSpecularReflectance, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
                 {Texture::Spec, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
+            
+                {Texture::Tex_FPT_DeltaReflectionEmission, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
+                {Texture::Tex_FPT_DeltaReflectionReflectance, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
+                {Texture::Tex_FPT_DeltaReflectionRadianceHitDist, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
+
+                {Texture::Tex_FPT_DeltaTransmissionEmission, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
+                {Texture::Tex_FPT_DeltaTransmissionReflectance, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
+                {Texture::Tex_FPT_DeltaTransmissionRadianceHitDist, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
+
                 // Output
                 {Texture::ComposedLighting_ViewZ, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
             };
