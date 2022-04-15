@@ -11,7 +11,7 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 #if( !defined( COMPILER_FXC ) )
 
 
-//#define DELTA_REFLECTION_PASS
+#define DELTA_REFLECTION_PASS
 //#define DELTA_TRANSMISSION_PASS
 
 
@@ -418,12 +418,12 @@ void main( uint2 pixelPos : SV_DispatchThreadId )
 
     // primay ray hit
     FalcorPayload primaryFalcorPayload = PrepareForPrimaryRayPayload(pixelPos, viewZ);
-
+    
     // handle primary hit
 #if defined(DELTA_REFLECTION_PASS)
     gPathTracer.handleDeltaReflectionHit(path, primaryFalcorPayload);
 #elif defined(DELTA_TRANSMISSION_PASS)
-    gPathTracer.handleDeltaTransmissionHit(path, primaryFalcorPayload);
+    //gPathTracer.handleDeltaTransmissionHit(path, primaryFalcorPayload);
 #else
     //VisibilityQuery vq;
     gPathTracer.handleHit(path, primaryFalcorPayload, vq);
@@ -467,14 +467,14 @@ void main( uint2 pixelPos : SV_DispatchThreadId )
                 //payload = PathPayload::pack(path);
             }
             else
-            {
+            {              
                 // handle hit
 
                 path.sceneLength += (hitT);
 
                 //gPathTracer.setupPathLogging(path);
 #if defined(DELTA_REFLECTION_PASS)
-                gPathTracer.handleDeltaReflectionHit(path);
+                gPathTracer.handleDeltaReflectionHit(path, falcorPayload);
 #elif defined(DELTA_TRANSMISSION_PASS)
                 gPathTracer.handleDeltaTransmissionHit(path);
 #else
@@ -520,184 +520,6 @@ void main( uint2 pixelPos : SV_DispatchThreadId )
         gOut_Spec[ outPixelPos ] = specIndirect;
     }
 
-#endif
-
-#if 0
-    {
-        float eta = 1.5;
-        SampleGenerator sgg;
-        float lobeSample = sampleNext1D(sgg);
-
-        float3x3 mLocalBasis = STL::Geometry::GetBasis(N);         
-
-
-        float3 spOrigin = X;
-        float3 spNormal = N;
-
-        float3 wiWorld = normalize(V);
-        float3 wiLocal = STL::Geometry::RotateVector(mLocalBasis, wiWorld);                                   // world to local   
-        float3 wi = wiLocal;
-        
-
-        float cosThetaT;
-        float F = evalFresnelDielectric(eta, wi.z, cosThetaT);
-
-
-        bool isReflection = lobeSample < F;
-
-        //spOrigin = computeRayOrigin(spOrigin, -N);
-
-
-        float4 result = 0.0;
-        if (isReflection)
-        {
-            result = float4(1, 0, 0, 1);
-        }
- 
-
-
-        gOut_Spec[outPixelPos] = result;
-        return ;
-    }
-#endif
-
-
-#if 0
-    gOut_Spec[outPixelPos] = float4(worldPosition, 1);
-    return;
-#endif
-
-
-#if 0
-    {
-        if (baseColorMetalness.w > 0.9)
-        {
-            float3 origin = _GetXoffset(X, N);// computeRayOrigin(X, N);
-            float3 dir = reflect(-V, N);
-            float2 mipAndCone = float2(0.0, 1.0);
-
-            bool bIsMiss = CastVisibilityRay_AnyHit(origin, dir, 0.0, 10000.0, mipAndCone, gWorldTlas, 0xff, RAY_FLAG_NONE);
-
-            float4 result = 0.0;
-            if (!bIsMiss)
-            {
-                result = float4(1, 1, 0, 1);                
-            }
-
-            gOut_Spec[outPixelPos] = result;
-            return;
-        }
-        else
-        {
-            gOut_Diff[outPixelPos] = 0;
-            gOut_Spec[outPixelPos] = 0;
-            return;
-        }
-    }
-#endif
-
-
-
-#if 0
-    {
-        if (baseColorMetalness.w > 0.9)
-        {
-            float3 origin = computeRayOrigin(worldPosition, N);
-            V = normalize(-X);
-
-            float3 dir = reflect(-V, N);
-            float2 mipAndCone = float2(0.0, 1.0);
-
-            bool bIsMiss = CastVisibilityRay_AnyHit(origin, dir, 0.0, 10000.0, mipAndCone, gWorldTlas, 0xff, RAY_FLAG_NONE);
-
-            float4 result = 0.0;
-            if (!bIsMiss)
-            {
-                result = float4(1, 1, 0, 1);
-            }
-
-            gOut_Spec[outPixelPos] = result;
-            return;
-        }
-        else
-        {
-            gOut_Diff[outPixelPos] = 0;
-            gOut_Spec[outPixelPos] = 0;
-            return;
-        }
-    }
-#endif
-
-
-#if 0       // test for back or front N
-    //gOut_Spec[outPixelPos] = float4(N, 1);
-
-    float2 mipAndCone = GetConeAngleFromRoughness(0, 0);         ///!!!TODO
-
-    float3 rayOrigin = computeRayOrigin(0, -N);
-    GeometryProps geometryProps0 = CastRay(rayOrigin, -V, 0.f, kRayTMax, mipAndCone, gWorldTlas, GEOMETRY_IGNORE_TRANSPARENT, 0, 0);
-
-    if (geometryProps0.tmin != INF)
-    {
-        gOut_Spec[outPixelPos] = float4(geometryProps0.N, 1);
-    }
-    else
-    {
-        gOut_Spec[outPixelPos] = float4(1,0,0, 1);
-    }
-    
-#endif
-
-#if 0
-    {
-        float2 mipAndCone = GetConeAngleFromRoughness(0, 0);         ///!!!TODO
-        float3x3 mLocalBasis = STL::Geometry::GetBasis(N);
-        float eta = 1.0 / 1.5;
-        SampleGenerator sgg;
-
-
-        float3 rayOrigin = X;
-        float3 rayDir = -V;
-        float3 rayNormal = N;
-
-        float4 result = 0.0;
-        for (int i = 0; i < 4; i++)
-        {
-            float lobeSample = sampleNext1D(sgg);
-
-            float3 wi = STL::Geometry::RotateVectorInverse(mLocalBasis, -rayDir);                     // local to world
-
-            float cosThetaT;
-            float F = evalFresnelDielectric(eta, wi.z, cosThetaT);
-
-            bool isReflection = lobeSample < F;
-            float3 wo = isReflection ? float3(-wi.x, -wi.y, wi.z) : float3(-wi.x * eta, -wi.y * eta, -cosThetaT);
-            float3 woWorld = STL::Geometry::RotateVectorInverse(mLocalBasis, wo);
-
-            
-            rayOrigin = computeRayOrigin(rayOrigin, isReflection ? rayNormal : -rayNormal);
-
-            GeometryProps geometryProps0 = CastRay(rayOrigin, woWorld, 0.f, kRayTMax, mipAndCone, gWorldTlas, GEOMETRY_IGNORE_TRANSPARENT, 0, 0);
-            float hitT = geometryProps0.tmin;
-
-
-            if (hitT == INF)   // miss
-            {
-                result.rgb = getSky(woWorld);
-     
-                break;
-            }
-            else
-            {
-                rayOrigin = rayOrigin + rayDir * hitT;
-                rayDir = woWorld;
-                rayNormal = geometryProps0.N;
-            }
-        }
-
-        gOut_Spec[outPixelPos] = result;
-        return;
-    }
 #endif
 }
 

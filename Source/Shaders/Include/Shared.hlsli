@@ -163,6 +163,10 @@ NRI_RESOURCE( SamplerState, gLinearSampler, s, 3, 0 );
 #define SHOW_MIP_PRIMARY                    12
 #define SHOW_MIP_SPECULAR                   13
 
+// Falcor PT
+#define SHOW_FPT_DELTA_REFLECTION           14
+
+
 #define FP16_MAX                            65504.0
 #define INF                                 1e5
 

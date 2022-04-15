@@ -33,6 +33,58 @@
 
 #pragma once
 
+
+
+/** Get material reflectance based on the metallic value.
+*/
+float3 getMaterialReflectanceForDeltaPaths(const bool hasDeltaLobes, const ShadingData sd, const BSDFProperties bsdfProperties, const FalcorPayload falcorPayload)
+{
+    //if (materialType == MaterialType::Standard)
+    //{
+        //const BasicMaterialData md = gScene.materials.getBasicMaterialData(sd.materialID);
+    const float metallic = falcorPayload.metallic;// md.specular.b; // Blue component stores metallic in MetalRough mode.
+
+    if (metallic == 0.f)
+    {
+        const float3 diffuseReflectance = max(kNRDMinReflectance, bsdfProperties.diffuseReflectionAlbedo);
+        return diffuseReflectance;
+    }
+    // Handle only non-delta specular lobes.
+    else if (metallic == 1.f && !hasDeltaLobes)
+    {
+        const float NdotV = saturate(dot(sd.N, sd.V));
+        const float ggxAlpha = bsdfProperties.roughness * bsdfProperties.roughness;
+        float3 specularReflectance = approxSpecularIntegralGGX(bsdfProperties.specularReflectionAlbedo, ggxAlpha, NdotV);
+        specularReflectance = max(kNRDMinReflectance, specularReflectance);
+        return specularReflectance;
+    }
+    //}
+    //else if (materialType == MaterialType::Hair)
+    //{
+    //    const float3 reflectance = max(kNRDMinReflectance, bsdfProperties.diffuseReflectionAlbedo);
+    //    return reflectance;
+    //}
+
+    return 1.f;
+}
+
+
+bool isDeltaReflectionAllowedAlongDeltaTransmissionPath(const ShadingData sd, const FalcorPayload falcorPayload)
+{
+    // const BasicMaterialData md = gScene.materials.getBasicMaterialData(sd.materialID);
+    const float metallic = falcorPayload.metallic; // md.specular.b; // Blue component stores metallic in MetalRough mode.
+    const float insideIoR = falcorPayload.ior;// gScene.materials.evalIoR(sd.materialID);
+
+    const float eta = sd.frontFacing ? (sd.IoR / insideIoR) : (insideIoR / sd.IoR);
+    bool totalInternalReflection = evalFresnelDielectric(eta, sd.toLocal(sd.V).z) == 1.f;
+
+    bool nonTransmissiveMirror = (falcorPayload.specularTransmission == 0.f) && (metallic == 1.f);
+
+    return totalInternalReflection || nonTransmissiveMirror;
+}
+
+
+
 #if 0
 
 void setNRDPrimaryHitEmission(NRDBuffers outputNRD, const bool useNRDDemodulation, const PathState path, const uint2 pixel, const bool isPrimaryHit, const float3 emission)
@@ -153,3 +205,53 @@ void setNRDPrimaryLobe(inout PathState path, bool isPrimaryHit)
         }
     }
 }
+
+
+
+/** Write out delta reflection guide buffers.
+    Executed only for guide paths.
+*/
+void writeNRDDeltaReflectionGuideBuffers(NRDBuffers outputNRD, const bool useNRDDemodulation, const uint2 pixelPos, float3 reflectance, float3 emission, float3 normal, float roughness, float pathLength, float hitDist)
+{
+    emission = useNRDDemodulation ? emission : 0.f;
+    reflectance = useNRDDemodulation ? max(kNRDMinReflectance, reflectance) : 1.f;
+
+    // float2 octNormal = ndir_to_oct_unorm(normal);
+    // Clamp roughness so it's representable of what is actually used in the renderer.
+    float clampedRoughness = roughness < 0.08f ? 0.00f : roughness;
+    float materialID = 0.f;
+
+    gOut_DeltaReflectionEmission[pixelPos] = float4(emission, 0.f);
+    gOut_DeltaReflectionReflectance[pixelPos] = float4(reflectance, 0.f);
+    gOut_DeltaReflectionNormWRoughMaterialID[pixelPos] = float4(normal, clampedRoughness);// float4(octNormal, clampedRoughness, materialID);
+    gOut_DeltaReflectionPathLength[pixelPos] = pathLength;
+    gOut_DeltaReflectionHitDist[pixelPos] = hitDist;
+}
+
+#if 0
+/** Write out delta transmission guide buffers.
+    Executed only for guide paths.
+*/
+void writeNRDDeltaTransmissionGuideBuffers(NRDBuffers outputNRD, const bool useNRDDemodulation, const uint2 pixelPos, float3 reflectance, float3 emission, float3 normal, float roughness, float pathLength, float3 posW)
+{
+    emission = useNRDDemodulation ? emission : 0.f;
+    reflectance = useNRDDemodulation ? max(kNRDMinReflectance, reflectance) : 1.f;
+
+    float2 octNormal = ndir_to_oct_unorm(normal);
+    // Clamp roughness so it's representable of what is actually used in the renderer.
+    float clampedRoughness = roughness < 0.08f ? 0.00f : roughness;
+    float materialID = 0.f;
+
+    outputNRD.deltaTransmissionEmission[pixelPos] = float4(emission, 0.f);
+    outputNRD.deltaTransmissionReflectance[pixelPos] = float4(reflectance, 0.f);
+    outputNRD.deltaTransmissionNormWRoughMaterialID[pixelPos] = float4(octNormal, clampedRoughness, materialID);
+    outputNRD.deltaTransmissionPathLength[pixelPos] = pathLength;
+    outputNRD.deltaTransmissionPosW[pixelPos] = float4(posW, 0.f);
+}
+#endif
+
+
+
+
+
+

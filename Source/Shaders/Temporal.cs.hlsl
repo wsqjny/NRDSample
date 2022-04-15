@@ -54,7 +54,14 @@ void Preload( uint2 sharedPos, int2 globalPos )
 [numthreads( GROUP_X, GROUP_Y, 1 )]
 void main( int2 threadPos : SV_GroupThreadId, int2 pixelPos : SV_DispatchThreadId, uint threadIndex : SV_GroupIndex )
 {
+    uint2 globalPos = pixelPos;
+
+    float4 color_viewZ = gIn_ComposedLighting_ViewZ[globalPos];
+    color_viewZ.xyz = ApplyPostLightingComposition(globalPos, color_viewZ.xyz, gIn_TransparentLayer);
+    color_viewZ.w = abs(color_viewZ.w) * STL::Math::Sign(gNearZ) / NRD_FP16_VIEWZ_SCALE;
+
+
 
     // Output
-    gOut_History[ pixelPos ] = gIn_ComposedLighting_ViewZ[pixelPos].rgb * 2;
+    gOut_History[ pixelPos ] = color_viewZ.rgb;
 }

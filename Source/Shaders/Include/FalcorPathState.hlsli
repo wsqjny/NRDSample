@@ -61,7 +61,11 @@ static uint PathFlags_lightSampledLower = 0x0080;           ///< Last path verte
 
 static uint PathFlags_diffusePrimaryHit = 0x0100;           ///< Scatter ray went through a diffuse event on primary hit.
 static uint PathFlags_specularPrimaryHit = 0x0200;          ///< Scatter ray went through a specular event on primary hit.
+static uint PathFlags_deltaReflectionPrimaryHit = 0x0400;   ///< Primary hit was sampled as the delta reflection.
+static uint PathFlags_deltaTransmissionPath = 0x0800;       ///< Path started with and followed delta transmission events (whenever possible - TIR could be an exception) until it hit the first non-delta event.
+static uint PathFlags_deltaOnlyPath = 0x1000;               ///< There was no non-delta events along the path so far.
 
+// Bits 14 to kPathFlagsBitCount are still unused.
 
 
 /** Bounce types. We keep separate counters for all of these.
@@ -123,6 +127,10 @@ struct PathState
 
     bool isDiffusePrimaryHit() { return hasFlag(PathFlags_diffusePrimaryHit); }
     bool isSpecularPrimaryHit() { return hasFlag(PathFlags_specularPrimaryHit); }
+    bool isDeltaReflectionPrimaryHit() { return hasFlag(PathFlags_deltaReflectionPrimaryHit); }
+    bool isDeltaTransmissionPath() { return hasFlag(PathFlags_deltaTransmissionPath); }
+    bool isDeltaOnlyPath() { return hasFlag(PathFlags_deltaOnlyPath); }
+
 
     // Check if the scatter event is samplable by the light sampling technique.
     bool isLightSamplable() { return !isDelta(); }
@@ -145,6 +153,10 @@ struct PathState
     /*[mutating]*/ void setLightSampled(bool upper, bool lower) { setFlag(PathFlags_lightSampledUpper, upper); setFlag(PathFlags_lightSampledLower, lower); }
     /*[mutating]*/ void setDiffusePrimaryHit(bool value = true) { setFlag(PathFlags_diffusePrimaryHit, value); }
     /*[mutating]*/ void setSpecularPrimaryHit(bool value = true) { setFlag(PathFlags_specularPrimaryHit, value); }
+    /*[mutating]*/ void setDeltaReflectionPrimaryHit(bool value = true) { setFlag(PathFlags_deltaReflectionPrimaryHit, value); }
+    /*[mutating]*/ void setDeltaTransmissionPath(bool value = true) { setFlag(PathFlags_deltaTransmissionPath, value); }
+    /*[mutating]*/ void setDeltaOnlyPath(bool value = true) { setFlag(PathFlags_deltaOnlyPath, value); }
+
 
     bool hasFlag(uint flag)
     {

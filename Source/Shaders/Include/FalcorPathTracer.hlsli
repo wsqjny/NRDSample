@@ -117,6 +117,7 @@ struct PathTracer
 
     // Samplers
     EnvMapSampler envMapSampler;                    ///< Environment map sampler. Only valid when kUseEnvLight == true.
+    NRDBuffers outputNRD;                           ///< Output NRD data.
 
     /*******************************************************************
                               Member functions
@@ -209,7 +210,7 @@ struct PathTracer
         \param[in,out] path The path state.
         \return True if a ray was generated, false otherwise.
     */
-    bool generateScatterRay(const ShadingData sd, const StandardBSDF bsdf, inout PathState path)
+    bool generateScatterRay(const ShadingData sd, const StandardBSDF bsdf, inout PathState path, const FalcorPayload falcorPayload)
     {
         BSDFSample result;
 
@@ -218,10 +219,39 @@ struct PathTracer
             valid = generateScatterRay(result, sd, bsdf, path);
 
         // Ignore valid on purpose for now.
-        if (kOutputNRDData && path.getVertexIndex() == 1)
+        if (kOutputNRDData)
         {
-            path.setDiffusePrimaryHit(result.isLobe(LobeType_Diffuse));
-            path.setSpecularPrimaryHit(result.isLobe(LobeType_Specular));
+            const uint lobes = bsdf.getLobes(sd);
+            const bool hasDeltaTransmissionLobe = (lobes & (uint)LobeType_DeltaTransmission) != 0;
+            const bool hasNonDeltaLobes = (lobes & (uint)LobeType_NonDelta) != 0;
+
+            if (path.getVertexIndex() == 1)
+            {
+                path.setDiffusePrimaryHit(result.isLobe(LobeType_Diffuse));
+                path.setSpecularPrimaryHit(result.isLobe(LobeType_Specular));
+
+                if (kOutputNRDAdditionalData)
+                {
+                    // Mark path as delta-only if it followed delta lobe on the primary hit, even though there might have been non-delta lobes.
+                    path.setDeltaOnlyPath(result.isLobe(LobeType_DeltaReflection) || result.isLobe(LobeType_DeltaTransmission));
+
+                    path.setDeltaReflectionPrimaryHit(result.isLobe(LobeType_DeltaReflection));
+                    path.setDeltaTransmissionPath(result.isLobe(LobeType_DeltaTransmission));
+                }
+            }
+
+            if (path.getVertexIndex() > 1)
+            {
+                if (hasNonDeltaLobes) path.setDeltaOnlyPath(false);
+
+                if (kOutputNRDAdditionalData && path.isDeltaTransmissionPath() && path.isDeltaOnlyPath() && hasDeltaTransmissionLobe)
+                {
+                    if (result.isLobe(LobeType_DeltaReflection) && !isDeltaReflectionAllowedAlongDeltaTransmissionPath(sd, falcorPayload))
+                    {
+                        path.setDeltaTransmissionPath(false);
+                    }
+                }
+            }
         }
 
         return valid;
@@ -684,8 +714,10 @@ struct PathTracer
             if (terminatePathByRussianRoulette(path, sampleNext1D(path.sg))) return;
         }
 
+        const bool wasDeltaOnlyPathBeforeScattering = path.isDeltaOnlyPath();
+
         // Generate the next path segment or terminate.
-        bool valid = generateScatterRay(sd, bsdf, path);
+        bool valid = generateScatterRay(sd, bsdf, path, falcorPayload);
 
         // Output guide data.
         //if (path.getVertexIndex() == 1)
@@ -709,8 +741,8 @@ struct PathTracer
             //setNRDPrimaryHitReflectance(outputNRD, kUseNRDDemodulation, path, pixel, isPrimaryHit, sd, bsdfProperties);
 
             //setNRDSampleHitDist(outputNRD, path, outSampleIdx);
-            //setNRDSampleEmission(outputNRD, kUseNRDDemodulation, path, outSampleIdx, isPrimaryHit, attenuatedEmission);
-            //setNRDSampleReflectance(outputNRD, kUseNRDDemodulation, path, outSampleIdx, isPrimaryHit, sd, bsdfProperties);
+            //setNRDSampleEmission(outputNRD, kUseNRDDemodulation, path, outSampleIdx, isPrimaryHit, attenuatedEmission, wasDeltaOnlyPathBeforeScattering);
+            //setNRDSampleReflectance(outputNRD, kUseNRDDemodulation, path, outSampleIdx, isPrimaryHit, sd, bsdfProperties, lobes, wasDeltaOnlyPathBeforeScattering);
 
             setNRDSampleHitDist(path);
             setNRDPrimaryLobe(path, isPrimaryHit);
@@ -760,6 +792,8 @@ struct PathTracer
         // that RTXDI cannot handle, such as transmission, delta or volume scattering events.
         if (kUseRTXDI && path.getVertexIndex() == 2 && !path.isTransmission() && !path.isDelta()) computeEnv = false;
 
+        float3 emitterRadiance = 0.f;
+
         if (computeEnv)
         {
             //logPathVertex();
@@ -779,7 +813,8 @@ struct PathTracer
             }
 
             float3 Le = envMapSampler.eval(path.dir);
-            addToPathContribution(path, misWeight * Le);
+            emitterRadiance = misWeight * Le;
+            addToPathContribution(path, emitterRadiance);
 
 
 #if 0
@@ -810,6 +845,281 @@ struct PathTracer
             setNRDSampleHitDist(path);
         }
 
+#if defined(DELTA_REFLECTION_PASS)
+        if (path.isDeltaReflectionPrimaryHit())
+        {
+            writeNRDDeltaReflectionGuideBuffers(outputNRD, kUseNRDDemodulation, path.getPixel(), 0.f, path.thp * emitterRadiance, -path.dir, 0.f, kNRDInvalidPathLength, kNRDInvalidPathLength);
+        }
+        else
+        {
+            writeNRDDeltaReflectionGuideBuffers(outputNRD, kUseNRDDemodulation, path.getPixel(), 0.f, 0.f, -path.dir, 0.f, kNRDInvalidPathLength, kNRDInvalidPathLength);
+        }
+#elif defined(DELTA_TRANSMISSION_PASS)
+        if (path.isDeltaTransmissionPath())
+        {
+            writeNRDDeltaTransmissionGuideBuffers(outputNRD, kUseNRDDemodulation, path.getPixel(), 0.f, path.thp * emitterRadiance, -path.dir, 0.f, kNRDInvalidPathLength, path.origin + path.dir * kNRDInvalidPathLength);
+        }
+        else
+        {
+            writeNRDDeltaTransmissionGuideBuffers(outputNRD, kUseNRDDemodulation, path.getPixel(), 0.f, 0.f, -path.dir, 0.f, kNRDInvalidPathLength, 0.f);
+        }
+#endif
+
         path.terminate();
     }
+
+
+    ////- Extensions, PathTracerNRD.slang
+    /** Handle hit on delta reflection materials.
+    After handling the hit, the path is terminated.
+    Executed only for guide paths.
+    \param[in,out] path The path state.
+    */
+    void handleDeltaReflectionHit(inout PathState path, const FalcorPayload falcorPayload)
+    {
+        // Upon hit:
+        // - Load vertex/material data
+        // - Write out reflectance/normalWRough/posW of the second path vertex
+        // - Terminate
+
+        const bool isPrimaryHit = path.getVertexIndex() == 1;
+        //const bool isTriangleHit = path.hit.getType() == HitType::Triangle;
+        const uint2 pixel = path.getPixel();
+        const float3 viewDir = -path.dir;
+
+        //let lod = createTextureSampler(path, isPrimaryHit, isTriangleHit);
+
+        // Load shading data. This is a long latency operation.
+        //ShadingData sd = loadShadingData(path.hit, path.origin, path.dir, isPrimaryHit, lod);
+        ShadingData sd = loadShadingData(falcorPayload);
+
+        // Reject false hits in nested dielectrics.
+        // if (!handleNestedDielectrics(sd, path)) return;
+
+        // Create BSDF instance and query its properties.
+        // let bsdf = gScene.materials.getBSDF(sd, lod);
+        // let bsdfProperties = bsdf.getProperties(sd);
+
+        StandardBSDF bsdf = (StandardBSDF)0;
+        bsdf.data = LoadStanderdBSDFData(falcorPayload, sd);
+
+        BSDFProperties bsdfProperties = bsdf.getProperties(sd);
+
+        // Query BSDF lobes.
+        const uint lobes = bsdf.getLobes(sd);
+        const bool hasDeltaLobes = (lobes & (uint)LobeType_Delta) != 0;
+
+        // const MaterialType materialType = sd.mtl.getMaterialType();
+
+
+        if (isPrimaryHit)
+        {
+            // Terminate without the write-out if the path doesn't start as delta reflection.
+            bool hasDeltaReflectionLobe = ((lobes & (uint)LobeType_DeltaReflection) != 0);
+            if (!hasDeltaReflectionLobe)
+            {
+                writeNRDDeltaReflectionGuideBuffers(outputNRD, kUseNRDDemodulation, pixel, 0.f, 0.f, viewDir, 0.f, kNRDInvalidPathLength, kNRDInvalidPathLength);
+                path.terminate();
+                return;
+            }
+
+            // Add primary ray length to the path length.
+            float primaryHitDist = length(sd.posW - path.origin);
+            path.sceneLength += float16_t(primaryHitDist);
+            // Hijack pdf that we don't need.
+            path.pdf += primaryHitDist;
+
+            // Set the active lobes only to delta reflection on the first bounce.
+            sd.mtlActiveLobe = (uint)LobeType_DeltaReflection;
+        }
+        else
+        {
+            // Use path's radiance field to accumulate emission along the path since the radiance is not used for denoiser guide paths.
+            // No need for accumulating emission at the primary hit since the primary hit emission is coming from GBuffer.
+            path.L += path.thp * bsdfProperties.emission;
+
+            // Terminate after scatter ray on last vertex has been processed or non-delta lobe exists.
+            const bool lastVertex = hasFinishedSurfaceBounces(path);
+            const bool hasNonDeltaLobes = (lobes & (uint)LobeType_NonDelta) != 0;
+            const bool isEmissive = any(bsdfProperties.emission > 0.f);
+
+            if (lastVertex || hasNonDeltaLobes || isEmissive)
+            {
+                const float3 emission = path.L;
+                const float3 reflectance = getMaterialReflectanceForDeltaPaths(hasDeltaLobes, sd, bsdfProperties, falcorPayload);
+                const float primaryHitDist = path.pdf;
+                const float hitDist = float(path.sceneLength) - primaryHitDist;
+                writeNRDDeltaReflectionGuideBuffers(outputNRD, kUseNRDDemodulation, pixel, reflectance, emission, sd.N, bsdfProperties.roughness, float(path.sceneLength), hitDist);
+
+                path.terminate();
+                return;
+            }
+
+            // For glass in reflections, force guide paths to always follow transmission/reflection based on albedos.
+            // This is pretty hacky but works best our of the possible options.
+            // Stable guide buffers are a necessity.
+            if (bsdfProperties.isTransmissive() && all(bsdfProperties.specularReflectionAlbedo <= bsdfProperties.specularTransmissionAlbedo))
+            {
+                sd.mtlActiveLobe = (uint)LobeType_DeltaTransmission;
+            }
+            else
+            {
+                sd.mtlActiveLobe = (uint)LobeType_DeltaReflection;
+            }
+        }
+
+        // Compute origin for rays traced from this path vertex.
+        path.origin = sd.computeNewRayOrigin();
+
+        // Hijack pdf that we don't need.
+        float primaryHitDist = path.pdf;
+
+        // Generate the next path segment or terminate.
+        bool valid = generateScatterRay(sd, bsdf, path, falcorPayload);
+
+        path.pdf = primaryHitDist;
+
+        if (!valid)
+        {
+            writeNRDDeltaReflectionGuideBuffers(outputNRD, kUseNRDDemodulation, pixel, 0.f, 0.f, viewDir, 0.f, kNRDInvalidPathLength, kNRDInvalidPathLength);
+            path.terminate();
+            return;
+        }
+
+#if 0
+        // Terminate if transmission lobe was chosen but volume absorption is too high
+        // but store the previous vertex shading data.
+        if (path.isTransmission())
+        {
+            // Fetch volume absorption from the material. This field only exist in basic materials for now.
+            bool semiOpaque = false;
+            if (gScene.materials.isBasicMaterial(sd.materialID))
+            {
+                BasicMaterialData md = gScene.materials.getBasicMaterialData(sd.materialID);
+                // TODO: Expose this arbitrary value as a constant.
+                semiOpaque = any(md.volumeAbsorption > 100.f);
+            }
+
+            if (semiOpaque)
+            {
+                const float3 emission = path.L;
+                const float3 reflectance = getMaterialReflectanceForDeltaPaths(materialType, hasDeltaLobes, sd, bsdfProperties);
+                const float primaryHitDist = path.pdf;
+                const float hitDist = float(path.sceneLength) - primaryHitDist;
+                writeNRDDeltaReflectionGuideBuffers(outputNRD, kUseNRDDemodulation, pixel, reflectance, emission, sd.N, bsdfProperties.roughness, float(path.sceneLength), hitDist);
+
+                path.terminate();
+                return;
+            }
+        }
+#endif
+    }
+
+
+
+#if 0
+    /** Handle hit on delta transmission materials.
+        After handling the hit, a new scatter (delta transmission only) ray is generated or the path is terminated.
+        Executed only for guide paths.
+        \param[in,out] path The path state.
+    */
+    void handleDeltaTransmissionHit(inout PathState path)
+    {
+        // Upon hit:
+        // - Load vertex/material data
+        // - Write out albedo/normal/posW on the first hit of non delta transmission BSDF lobe
+        // - Sample scatter ray or terminate
+
+        const bool isPrimaryHit = path.getVertexIndex() == 1;
+        const bool isTriangleHit = path.hit.getType() == HitType::Triangle;
+        const uint2 pixel = path.getPixel();
+        const float3 viewDir = -path.dir;
+
+        let lod = createTextureSampler(path, isPrimaryHit, isTriangleHit);
+
+        // Load shading data. This is a long latency operation.
+        ShadingData sd = loadShadingData(path.hit, path.origin, path.dir, isPrimaryHit, lod);
+
+        // Reject false hits in nested dielectrics.
+        if (!handleNestedDielectrics(sd, path)) return;
+
+        // Create BSDF instance and query its properties.
+        let bsdf = gScene.materials.getBSDF(sd, lod);
+        let bsdfProperties = bsdf.getProperties(sd);
+
+        const uint lobes = bsdf.getLobes(sd);
+
+        // Terminate without the write-out if the path doesn't start as delta transmission.
+        const bool hasDeltaTransmissionLobe = ((lobes & (uint)LobeType::DeltaTransmission) != 0);
+        if (isPrimaryHit && !hasDeltaTransmissionLobe)
+        {
+            writeNRDDeltaTransmissionGuideBuffers(outputNRD, kUseNRDDemodulation, pixel, 0.f, 0.f, viewDir, 0.f, kNRDInvalidPathLength, 0.f);
+            path.terminate();
+            return;
+        }
+
+        if (isPrimaryHit)
+        {
+            // Add primary ray length to the path length.
+            path.sceneLength += float16_t(length(sd.posW - path.origin));
+        }
+        else
+        {
+            // Use path's radiance field to accumulate emission along the path since the radiance is not used for denoiser guide paths.
+            // No need for accumulating emission at the primary hit since the primary hit emission is coming from GBuffer.
+            path.L += path.thp * bsdfProperties.emission;
+        }
+
+        // Terminate the delta transmission path.
+        const bool lastVertex = hasFinishedSurfaceBounces(path);
+        const bool hasNonDeltaLobes = (lobes & (uint)LobeType::NonDelta) != 0;
+
+        // Fetch volume absorption from the material. This field only exist in basic materials for now.
+        bool semiOpaque = false;
+        if (gScene.materials.isBasicMaterial(sd.materialID))
+        {
+            BasicMaterialData md = gScene.materials.getBasicMaterialData(sd.materialID);
+            // TODO: Expose this arbitrary value as a constant.
+            semiOpaque = any(md.volumeAbsorption > 100.f);
+        }
+
+        const MaterialType materialType = sd.mtl.getMaterialType();
+        const bool hasDeltaLobes = (lobes & (uint)LobeType::Delta) != 0;
+
+        if (lastVertex || semiOpaque)
+        {
+            float3 emission = path.L;
+            writeNRDDeltaTransmissionGuideBuffers(outputNRD, kUseNRDDemodulation, pixel, getMaterialReflectanceForDeltaPaths(materialType, hasDeltaLobes, sd, bsdfProperties), emission, sd.N, bsdfProperties.roughness, float(path.sceneLength), sd.posW);
+
+            path.terminate();
+            return;
+        }
+
+        // Compute origin for rays traced from this path vertex.
+        path.origin = sd.computeNewRayOrigin();
+
+        // Set the active lobes only to delta transmission.
+        sd.mtl.setActiveLobes((uint)LobeType::DeltaTransmission);
+
+        // Generate the next path segment or terminate.
+        bool valid = generateScatterRay(sd, bsdf, path);
+
+        // Delta transmission was not possible, fallback to delta reflection if it's allowed.
+        if (!valid && isDeltaReflectionAllowedAlongDeltaTransmissionPath(sd))
+        {
+            sd.mtl.setActiveLobes((uint)LobeType::DeltaTransmission | (uint)LobeType::DeltaReflection);
+            valid = generateScatterRay(sd, bsdf, path);
+        }
+
+        if (!valid)
+        {
+            float3 emission = path.L;
+            writeNRDDeltaTransmissionGuideBuffers(outputNRD, kUseNRDDemodulation, pixel, getMaterialReflectanceForDeltaPaths(materialType, hasDeltaLobes, sd, bsdfProperties), emission, sd.N, bsdfProperties.roughness, float(path.sceneLength), sd.posW);
+
+            path.terminate();
+            return;
+        }
+    }
+#endif
+
 };

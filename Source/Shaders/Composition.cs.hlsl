@@ -21,8 +21,11 @@ NRI_RESOURCE( Texture2D<float2>, gIn_IntegratedBRDF, t, 6, 1 );
 NRI_RESOURCE( Texture2D<float4>, gIn_Diff, t, 7, 1 );
 NRI_RESOURCE( Texture2D<float4>, gIn_Spec, t, 8, 1 );
 
+NRI_RESOURCE(Texture2D<float4>, gIn_DeltaReflec, t, 9, 1);
+//NRI_RESOURCE(Texture2D<float4>, gIn_Spec, t, 8, 1);
+
 // Outputs
-NRI_RESOURCE( RWTexture2D<float4>, gOut_ComposedImage, u, 9, 1 );
+NRI_RESOURCE( RWTexture2D<float4>, gOut_ComposedImage, u, 10, 1 );
 
 float4 Upsample( Texture2D<float4> tex, float2 pixelUv, float zReal )
 {
@@ -144,6 +147,9 @@ void main( int2 pixelPos : SV_DispatchThreadId )
     Lsum += ambient * diffIndirect.w * albedo * ( 1.0 - F );
     Lsum += ambient * specIndirect.w * m * F;
 
+
+    float4 pt_delta_reflect = gIn_DeltaReflec[pixelPos];
+
     // Debug
     if( gOnScreen == SHOW_DENOISED_DIFFUSE )
         Lsum = diffIndirect.xyz;
@@ -163,6 +169,8 @@ void main( int2 pixelPos : SV_DispatchThreadId )
         Lsum = baseColorMetalness.w;
     else if( gOnScreen == SHOW_WORLD_UNITS )
         Lsum = frac( X * gUnitToMetersMultiplier );
+    else if( gOnScreen == SHOW_FPT_DELTA_REFLECTION )
+        Lsum = pt_delta_reflect.xyz;
     else if( gOnScreen != SHOW_FINAL )
         Lsum = gOnScreen == SHOW_MIP_SPECULAR ? specIndirect.xyz : Ldirect.xyz;
 
