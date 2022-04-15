@@ -155,6 +155,7 @@ enum class Pipeline : uint32_t
     FalcorPT_TraceDeltaReflectionPass,
     FalcorPT_TraceDeltaTransmissionPass,
     FalcorPT_Resolve,
+    FalcorNRD_PackRadiance,
     Composition,
     Temporal,
     Upsample,
@@ -272,6 +273,7 @@ enum class DescriptorSet : uint32_t
     IndirectRays1,
     FalcorPathTracer,
     FalcorPTResolve,
+    FalcorNRDPackRadiance,
     Composition1,
     Temporal1a,
     Temporal1b,
@@ -645,6 +647,8 @@ private:
     uint2 m_ScreenResolution = {};
     utils::Scene m_Scene;
     nrd::RelaxDiffuseSpecularSettings m_RelaxSettings = {};
+    nrd::RelaxDiffuseSettings m_RelaxDiffuseSetting = {};
+    nrd::RelaxSpecularSettings m_RelaxSpecularSetting = {};
     nrd::ReblurSettings m_ReblurSettings = {};
     Settings m_Settings = {};
     Settings m_PrevSettings = {};
@@ -2356,6 +2360,35 @@ void Sample::CreatePipelines()
         m_Pipelines.push_back(pipeline);
     }
 
+    { // Pipeline::FalcorNRDPackRadiance
+        const nri::DescriptorRangeDesc descriptorRanges1[] =
+        {
+            { 0, 2, nri::DescriptorType::TEXTURE, nri::ShaderStage::ALL },
+            { 2, 2, nri::DescriptorType::STORAGE_TEXTURE, nri::ShaderStage::ALL }
+        };
+
+        const nri::DescriptorSetDesc descriptorSetDesc[] =
+        {
+            { descriptorRanges0, helper::GetCountOf(descriptorRanges0), staticSamplersDesc, helper::GetCountOf(staticSamplersDesc) },
+            { descriptorRanges1, helper::GetCountOf(descriptorRanges1) },
+        };
+
+        nri::PipelineLayoutDesc pipelineLayoutDesc = {};
+        pipelineLayoutDesc.descriptorSets = descriptorSetDesc;
+        pipelineLayoutDesc.descriptorSetNum = helper::GetCountOf(descriptorSetDesc);
+        pipelineLayoutDesc.stageMask = nri::PipelineLayoutShaderStageBits::COMPUTE;
+
+        NRI_ABORT_ON_FAILURE(NRI.CreatePipelineLayout(*m_Device, pipelineLayoutDesc, pipelineLayout));
+        m_PipelineLayouts.push_back(pipelineLayout);
+
+        nri::ComputePipelineDesc pipelineDesc = {};
+        pipelineDesc.pipelineLayout = pipelineLayout;
+        pipelineDesc.computeShader = utils::LoadShader(m_DeviceDesc->graphicsAPI, "FalcorNRDPackRadiance.cs", shaderCodeStorage);
+
+        NRI_ABORT_ON_FAILURE(NRI.CreateComputePipeline(*m_Device, pipelineDesc, pipeline));
+        m_Pipelines.push_back(pipeline);
+    }
+
     { // Pipeline::Composition
         const nri::DescriptorRangeDesc descriptorRanges1[] =
         {
@@ -2764,6 +2797,31 @@ void Sample::CreateDescriptorSets()
         NRI.UpdateDescriptorRanges(*descriptorSet, nri::WHOLE_DEVICE_GROUP, 0, helper::GetCountOf(descriptorRangeUpdateDesc), descriptorRangeUpdateDesc);
     }
 
+    { // DescriptorSet::FalcorNRDPackRadiance
+        NRI_ABORT_ON_FAILURE(NRI.AllocateDescriptorSets(*m_DescriptorPool, *GetPipelineLayout(Pipeline::FalcorNRD_PackRadiance), 1, &descriptorSet, 1, nri::WHOLE_DEVICE_GROUP, 0));
+        m_DescriptorSets.push_back(descriptorSet);
+
+        const nri::Descriptor* textures[] =
+        {
+            Get(Descriptor::ViewZ_Texture),
+            Get(Descriptor::Normal_Roughness_Texture),
+        };
+
+        const nri::Descriptor* storageTextures[] =
+        {
+            Get(Descriptor::Desc_FPT_SampleDiffuseRadianceHitDist_StorageTexture),
+            Get(Descriptor::Desc_FPT_SampleSpecularRadianceHitDist_StorageTexture),
+        };
+
+        const nri::DescriptorRangeUpdateDesc descriptorRangeUpdateDesc[] =
+        {
+            { textures, helper::GetCountOf(textures) },
+            { storageTextures, helper::GetCountOf(storageTextures) },
+        };
+
+        NRI.UpdateDescriptorRanges(*descriptorSet, nri::WHOLE_DEVICE_GROUP, 0, helper::GetCountOf(descriptorRangeUpdateDesc), descriptorRangeUpdateDesc);
+    }
+
     { // DescriptorSet::Composition1
         NRI_ABORT_ON_FAILURE(NRI.AllocateDescriptorSets(*m_DescriptorPool, *GetPipelineLayout(Pipeline::Composition), 1, &descriptorSet, 1, nri::WHOLE_DEVICE_GROUP, 0));
         m_DescriptorSets.push_back(descriptorSet);
@@ -2777,8 +2835,8 @@ void Sample::CreateDescriptorSets()
             Get(Descriptor::DirectLighting_Texture),
             Get(Descriptor::Ambient_Texture),
             Get(Descriptor::IntegrateBRDF_Texture),
-            Get(Descriptor::Desc_FPT_SampleDiffuseRadianceHitDist_Texture),
-            Get(Descriptor::Desc_FPT_SampleSpecularRadianceHitDist_Texture),
+            Get(Descriptor::Diff_Texture),
+            Get(Descriptor::Spec_Texture),
         };
 
         const nri::Descriptor* storageTextures[] =
@@ -4364,7 +4422,7 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
         NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_VIEWZ, { &GetState(Texture::ViewZ), GetFormat(Texture::ViewZ) });
 
         // Diffuse
-        NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST, { &GetState(Texture::Unfiltered_Diff), GetFormat(Texture::Unfiltered_Diff) });
+        NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST, { &GetState(Texture::Tex_FPT_SampleDiffuseRadianceHitDist), GetFormat(Texture::Tex_FPT_SampleDiffuseRadianceHitDist) });
         NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_DIFF_DIRECTION_PDF, { &GetState(Texture::DiffDirectionPdf), GetFormat(Texture::DiffDirectionPdf) });
         NrdIntegration_SetResource(userPool, nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST, { &GetState(Texture::Diff), GetFormat(Texture::Diff) });
 
@@ -4377,7 +4435,7 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
         NrdIntegration_SetResource(userPool, nrd::ResourceType::OUT_DIFF_DIRECTION_HITDIST, { &GetState(Texture::Diff), GetFormat(Texture::Diff) });
 
         // Specular
-        NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_SPEC_RADIANCE_HITDIST, { &GetState(Texture::Unfiltered_Spec), GetFormat(Texture::Unfiltered_Spec) });
+        NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_SPEC_RADIANCE_HITDIST, { &GetState(Texture::Tex_FPT_SampleSpecularRadianceHitDist), GetFormat(Texture::Tex_FPT_SampleSpecularRadianceHitDist) });
         NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_SPEC_DIRECTION_PDF, { &GetState(Texture::SpecDirectionPdf), GetFormat(Texture::SpecDirectionPdf) });
         NrdIntegration_SetResource(userPool, nrd::ResourceType::OUT_SPEC_RADIANCE_HITDIST, { &GetState(Texture::Spec), GetFormat(Texture::Spec) });
 
@@ -4396,6 +4454,92 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
     }
 
     UpdateConstantBuffer(frameIndex, resetHistoryFactor);
+
+
+    // Prepare for nrd.
+    {
+        // Reblur Setting.
+        const float3 trimmingParams = GetSpecularLobeTrimming();
+        m_ReblurSettings.specularLobeTrimmingParameters = { trimmingParams.x, trimmingParams.y, trimmingParams.z };
+
+        nrd::HitDistanceParameters hitDistanceParameters = {};
+        hitDistanceParameters.A = m_Settings.hitDistScale * m_Settings.meterToUnitsMultiplier;
+        m_ReblurSettings.hitDistanceParameters = hitDistanceParameters;
+
+        float antilagMaxThresholdScale = 0.25f + 0.75f / (1.0f + (m_Settings.rpp - 1) * 0.25f);
+        m_ReblurSettings.antilagIntensitySettings.thresholdMax = 0.20f * antilagMaxThresholdScale;
+        m_ReblurSettings.antilagHitDistanceSettings.thresholdMax = 0.15f * antilagMaxThresholdScale;
+
+        // IMPORTANT: needs to be manually tuned based on input range
+        m_ReblurSettings.antilagIntensitySettings.sensitivityToDarkness = 0.01f;
+
+        m_ReblurSettings.enableMaterialTestForDiffuse = true;
+        m_ReblurSettings.enableMaterialTestForSpecular = false;
+        m_ReblurSettings.maxAccumulatedFrameNum = maxAccumulatedFrameNum;
+        m_ReblurSettings.checkerboardMode = tracingMode == RESOLUTION_HALF ? nrd::CheckerboardMode::WHITE : nrd::CheckerboardMode::OFF;
+        m_ReblurSettings.prePassMode = (nrd::PrePassMode)m_Settings.prePassMode;
+        m_ReblurSettings.enableAntiFirefly = m_Settings.enableAntiFirefly;
+    }
+    {
+        m_RelaxSettings.diffuseMaxAccumulatedFrameNum = maxAccumulatedFrameNum;
+        m_RelaxSettings.diffuseMaxFastAccumulatedFrameNum = maxFastAccumulatedFrameNum;
+        m_RelaxSettings.specularMaxAccumulatedFrameNum = maxAccumulatedFrameNum;
+        m_RelaxSettings.specularMaxFastAccumulatedFrameNum = maxFastAccumulatedFrameNum;
+        m_RelaxSettings.checkerboardMode = tracingMode == RESOLUTION_HALF ? nrd::CheckerboardMode::WHITE : nrd::CheckerboardMode::OFF;
+        m_RelaxSettings.enableAntiFirefly = m_Settings.enableAntiFirefly;
+        m_RelaxSettings.diffusePrepassBlurRadius = m_Settings.prePassMode ? 50.0f : 0.0f;
+        m_RelaxSettings.specularPrepassBlurRadius = m_Settings.prePassMode ? 50.0f : 0.0f;
+        m_RelaxSettings.enableMaterialTestForDiffuse = true;
+        m_RelaxSettings.enableMaterialTestForSpecular = false;
+
+        m_RelaxDiffuseSetting.prepassBlurRadius = m_RelaxSettings.diffusePrepassBlurRadius;
+        m_RelaxDiffuseSetting.diffuseMaxAccumulatedFrameNum = m_RelaxSettings.diffuseMaxAccumulatedFrameNum;
+        m_RelaxDiffuseSetting.diffuseMaxFastAccumulatedFrameNum = m_RelaxSettings.diffuseMaxFastAccumulatedFrameNum;
+        m_RelaxDiffuseSetting.diffusePhiLuminance = m_RelaxSettings.diffusePhiLuminance;
+        m_RelaxDiffuseSetting.diffuseLobeAngleFraction = m_RelaxSettings.diffuseLobeAngleFraction;
+        m_RelaxDiffuseSetting.diffuseHistoryRejectionNormalThreshold = m_RelaxSettings.diffuseHistoryRejectionNormalThreshold;
+        m_RelaxDiffuseSetting.disocclusionFixEdgeStoppingNormalPower = m_RelaxSettings.disocclusionFixEdgeStoppingNormalPower;
+        m_RelaxDiffuseSetting.disocclusionFixMaxRadius = m_RelaxSettings.disocclusionFixMaxRadius;
+        m_RelaxDiffuseSetting.disocclusionFixNumFramesToFix = m_RelaxSettings.disocclusionFixNumFramesToFix;
+        m_RelaxDiffuseSetting.historyClampingColorBoxSigmaScale = m_RelaxSettings.historyClampingColorBoxSigmaScale;
+        m_RelaxDiffuseSetting.spatialVarianceEstimationHistoryThreshold = m_RelaxSettings.spatialVarianceEstimationHistoryThreshold;
+        m_RelaxDiffuseSetting.atrousIterationNum = m_RelaxSettings.atrousIterationNum;
+        m_RelaxDiffuseSetting.minLuminanceWeight = m_RelaxSettings.minLuminanceWeight;
+        m_RelaxDiffuseSetting.depthThreshold = m_RelaxSettings.depthThreshold;
+        m_RelaxDiffuseSetting.checkerboardMode = m_RelaxSettings.checkerboardMode;
+        m_RelaxDiffuseSetting.enableAntiFirefly = m_RelaxSettings.enableAntiFirefly;
+        m_RelaxDiffuseSetting.enableReprojectionTestSkippingWithoutMotion = m_RelaxSettings.enableReprojectionTestSkippingWithoutMotion;
+        m_RelaxDiffuseSetting.enableMaterialTest = m_RelaxSettings.enableMaterialTestForDiffuse;
+        
+        m_RelaxSpecularSetting.prepassBlurRadius = m_RelaxSettings.specularPrepassBlurRadius;
+        m_RelaxSpecularSetting.specularMaxAccumulatedFrameNum = m_RelaxSettings.specularMaxAccumulatedFrameNum;
+        m_RelaxSpecularSetting.specularMaxFastAccumulatedFrameNum = m_RelaxSettings.specularMaxFastAccumulatedFrameNum;
+        m_RelaxSpecularSetting.specularPhiLuminance = m_RelaxSettings.specularPhiLuminance;
+        m_RelaxSpecularSetting.diffuseLobeAngleFraction = m_RelaxSettings.diffuseLobeAngleFraction;
+        m_RelaxSpecularSetting.specularLobeAngleFraction = m_RelaxSettings.specularLobeAngleFraction;
+        m_RelaxSpecularSetting.roughnessFraction = m_RelaxSettings.roughnessFraction;
+        m_RelaxSpecularSetting.specularVarianceBoost = m_RelaxSettings.specularVarianceBoost;
+        m_RelaxSpecularSetting.specularLobeAngleSlack = m_RelaxSettings.specularLobeAngleSlack;
+        m_RelaxSpecularSetting.disocclusionFixEdgeStoppingNormalPower = m_RelaxSettings.disocclusionFixEdgeStoppingNormalPower;
+        m_RelaxSpecularSetting.disocclusionFixMaxRadius = m_RelaxSettings.disocclusionFixMaxRadius;
+        m_RelaxSpecularSetting.disocclusionFixNumFramesToFix = m_RelaxSettings.disocclusionFixNumFramesToFix;
+        m_RelaxSpecularSetting.historyClampingColorBoxSigmaScale = m_RelaxSettings.historyClampingColorBoxSigmaScale;
+        m_RelaxSpecularSetting.spatialVarianceEstimationHistoryThreshold = m_RelaxSettings.spatialVarianceEstimationHistoryThreshold;
+        m_RelaxSpecularSetting.atrousIterationNum = m_RelaxSettings.atrousIterationNum;
+        m_RelaxSpecularSetting.minLuminanceWeight = m_RelaxSettings.minLuminanceWeight;
+        m_RelaxSpecularSetting.depthThreshold = m_RelaxSettings.depthThreshold;
+        m_RelaxSpecularSetting.luminanceEdgeStoppingRelaxation = m_RelaxSettings.luminanceEdgeStoppingRelaxation;
+        m_RelaxSpecularSetting.normalEdgeStoppingRelaxation = m_RelaxSettings.normalEdgeStoppingRelaxation;
+        m_RelaxSpecularSetting.roughnessEdgeStoppingRelaxation = m_RelaxSettings.roughnessEdgeStoppingRelaxation;
+        m_RelaxSpecularSetting.checkerboardMode = tracingMode == RESOLUTION_HALF ? nrd::CheckerboardMode::BLACK : nrd::CheckerboardMode::OFF;
+        m_RelaxSpecularSetting.enableAntiFirefly = m_RelaxSettings.enableAntiFirefly;
+        m_RelaxSpecularSetting.enableReprojectionTestSkippingWithoutMotion = m_RelaxSettings.enableReprojectionTestSkippingWithoutMotion;
+        m_RelaxSpecularSetting.enableSpecularVirtualHistoryClamping = m_RelaxSettings.enableSpecularVirtualHistoryClamping;
+        m_RelaxSpecularSetting.enableRoughnessEdgeStopping = m_RelaxSettings.enableRoughnessEdgeStopping;
+        m_RelaxSpecularSetting.enableMaterialTest = m_RelaxSettings.enableMaterialTestForSpecular;
+    }
+    // End Prepare for nrd.
+
 
     NRI.BeginCommandBuffer(commandBuffer, m_DescriptorPool, 0);
     {
@@ -4609,42 +4753,39 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
             NRI.CmdDispatch(commandBuffer, rectGridW, rectGridH, 1);
         }
 
-#if 0
+
+        { // Falcor NRDPack Radiance
+            helper::Annotation annotation(NRI, commandBuffer, "FalcorNRD PackRadiance");
+
+            const TextureState transitions[] =
+            {
+                // Input
+                {Texture::ViewZ, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
+                {Texture::Normal_Roughness, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
+
+                // Output
+                {Texture::Tex_FPT_SampleDiffuseRadianceHitDist, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+                {Texture::Tex_FPT_SampleSpecularRadianceHitDist, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+            };
+
+            transitionBarriers.textures = optimizedTransitions.data();
+            transitionBarriers.textureNum = BuildOptimizedTransitions(transitions, helper::GetCountOf(transitions), optimizedTransitions.data(), helper::GetCountOf(optimizedTransitions));
+            NRI.CmdPipelineBarrier(commandBuffer, &transitionBarriers, nullptr, nri::BarrierDependency::ALL_STAGES);
+
+            NRI.CmdSetPipelineLayout(commandBuffer, *GetPipelineLayout(Pipeline::FalcorNRD_PackRadiance));
+            NRI.CmdSetPipeline(commandBuffer, *Get(Pipeline::FalcorNRD_PackRadiance));
+
+            const nri::DescriptorSet* descriptorSets[] = { frame.globalConstantBufferDescriptorSet, Get(DescriptorSet::FalcorNRDPackRadiance) };
+            NRI.CmdSetDescriptorSets(commandBuffer, 0, helper::GetCountOf(descriptorSets), descriptorSets, nullptr);
+
+            NRI.CmdDispatch(commandBuffer, rectGridW, rectGridH, 1);
+        }
+
         { // Diffuse & specular indirect lighting denoising
             helper::Annotation annotation(NRI, commandBuffer, "Indirect lighting denoising");
 
-            if (tracingMode == RESOLUTION_QUARTER)
-            {
-                userPool[(size_t)nrd::ResourceType::IN_MV] = { &GetState(Texture::Downsampled_Motion), GetFormat(Texture::Downsampled_Motion) };
-                userPool[(size_t)nrd::ResourceType::IN_NORMAL_ROUGHNESS] = { &GetState(Texture::Downsampled_Normal_Roughness), GetFormat(Texture::Downsampled_Normal_Roughness) };
-                userPool[(size_t)nrd::ResourceType::IN_VIEWZ] = { &GetState(Texture::Downsampled_ViewZ), GetFormat(Texture::Downsampled_ViewZ) };
-
-                commonSettings.resolutionScale[0] = resolutionScaleQuarter;
-                commonSettings.resolutionScale[1] = resolutionScaleQuarter;
-            }
-
             if (m_Settings.denoiser == REBLUR)
-            {
-                const float3 trimmingParams = GetSpecularLobeTrimming();
-                m_ReblurSettings.specularLobeTrimmingParameters = { trimmingParams.x, trimmingParams.y, trimmingParams.z };
-
-                nrd::HitDistanceParameters hitDistanceParameters = {};
-                hitDistanceParameters.A = m_Settings.hitDistScale * m_Settings.meterToUnitsMultiplier;
-                m_ReblurSettings.hitDistanceParameters = hitDistanceParameters;
-
-                float antilagMaxThresholdScale = 0.25f + 0.75f / (1.0f + (m_Settings.rpp - 1) * 0.25f);
-                m_ReblurSettings.antilagIntensitySettings.thresholdMax = 0.20f * antilagMaxThresholdScale;
-                m_ReblurSettings.antilagHitDistanceSettings.thresholdMax = 0.15f * antilagMaxThresholdScale;
-
-                // IMPORTANT: needs to be manually tuned based on input range
-                m_ReblurSettings.antilagIntensitySettings.sensitivityToDarkness = 0.01f;
-
-                m_ReblurSettings.enableMaterialTestForDiffuse = true;
-                m_ReblurSettings.enableMaterialTestForSpecular = false;
-                m_ReblurSettings.maxAccumulatedFrameNum = maxAccumulatedFrameNum;
-                m_ReblurSettings.checkerboardMode = tracingMode == RESOLUTION_HALF ? nrd::CheckerboardMode::WHITE : nrd::CheckerboardMode::OFF;
-                m_ReblurSettings.prePassMode = (nrd::PrePassMode)m_Settings.prePassMode;
-                m_ReblurSettings.enableAntiFirefly = m_Settings.enableAntiFirefly;
+            {           
 
 #if( NRD_OCCLUSION_ONLY == 0 )
 #if( NRD_COMBINED == 1 )
@@ -4666,70 +4807,14 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
             }
             else if (m_Settings.denoiser == RELAX)
             {
-                m_RelaxSettings.diffuseMaxAccumulatedFrameNum = maxAccumulatedFrameNum;
-                m_RelaxSettings.diffuseMaxFastAccumulatedFrameNum = maxFastAccumulatedFrameNum;
-                m_RelaxSettings.specularMaxAccumulatedFrameNum = maxAccumulatedFrameNum;
-                m_RelaxSettings.specularMaxFastAccumulatedFrameNum = maxFastAccumulatedFrameNum;
-                m_RelaxSettings.checkerboardMode = tracingMode == RESOLUTION_HALF ? nrd::CheckerboardMode::WHITE : nrd::CheckerboardMode::OFF;
-                m_RelaxSettings.enableAntiFirefly = m_Settings.enableAntiFirefly;
-                m_RelaxSettings.diffusePrepassBlurRadius = m_Settings.prePassMode ? 50.0f : 0.0f;
-                m_RelaxSettings.specularPrepassBlurRadius = m_Settings.prePassMode ? 50.0f : 0.0f;
-                m_RelaxSettings.enableMaterialTestForDiffuse = true;
-                m_RelaxSettings.enableMaterialTestForSpecular = false;
+               
 
 #if( NRD_COMBINED == 1 )
                 m_Relax.SetMethodSettings(nrd::Method::RELAX_DIFFUSE_SPECULAR, &m_RelaxSettings);
 #else
-                nrd::RelaxDiffuseSettings diffuseSettings = {};
-                diffuseSettings.prepassBlurRadius = m_RelaxSettings.diffusePrepassBlurRadius;
-                diffuseSettings.diffuseMaxAccumulatedFrameNum = m_RelaxSettings.diffuseMaxAccumulatedFrameNum;
-                diffuseSettings.diffuseMaxFastAccumulatedFrameNum = m_RelaxSettings.diffuseMaxFastAccumulatedFrameNum;
-                diffuseSettings.diffusePhiLuminance = m_RelaxSettings.diffusePhiLuminance;
-                diffuseSettings.diffuseLobeAngleFraction = m_RelaxSettings.diffuseLobeAngleFraction;
-                diffuseSettings.diffuseHistoryRejectionNormalThreshold = m_RelaxSettings.diffuseHistoryRejectionNormalThreshold;
-                diffuseSettings.disocclusionFixEdgeStoppingNormalPower = m_RelaxSettings.disocclusionFixEdgeStoppingNormalPower;
-                diffuseSettings.disocclusionFixMaxRadius = m_RelaxSettings.disocclusionFixMaxRadius;
-                diffuseSettings.disocclusionFixNumFramesToFix = m_RelaxSettings.disocclusionFixNumFramesToFix;
-                diffuseSettings.historyClampingColorBoxSigmaScale = m_RelaxSettings.historyClampingColorBoxSigmaScale;
-                diffuseSettings.spatialVarianceEstimationHistoryThreshold = m_RelaxSettings.spatialVarianceEstimationHistoryThreshold;
-                diffuseSettings.atrousIterationNum = m_RelaxSettings.atrousIterationNum;
-                diffuseSettings.minLuminanceWeight = m_RelaxSettings.minLuminanceWeight;
-                diffuseSettings.depthThreshold = m_RelaxSettings.depthThreshold;
-                diffuseSettings.checkerboardMode = m_RelaxSettings.checkerboardMode;
-                diffuseSettings.enableAntiFirefly = m_RelaxSettings.enableAntiFirefly;
-                diffuseSettings.enableReprojectionTestSkippingWithoutMotion = m_RelaxSettings.enableReprojectionTestSkippingWithoutMotion;
-                diffuseSettings.enableMaterialTest = m_RelaxSettings.enableMaterialTestForDiffuse;
 
-                nrd::RelaxSpecularSettings specularSettings = {};
-                specularSettings.prepassBlurRadius = m_RelaxSettings.specularPrepassBlurRadius;
-                specularSettings.specularMaxAccumulatedFrameNum = m_RelaxSettings.specularMaxAccumulatedFrameNum;
-                specularSettings.specularMaxFastAccumulatedFrameNum = m_RelaxSettings.specularMaxFastAccumulatedFrameNum;
-                specularSettings.specularPhiLuminance = m_RelaxSettings.specularPhiLuminance;
-                specularSettings.diffuseLobeAngleFraction = m_RelaxSettings.diffuseLobeAngleFraction;
-                specularSettings.specularLobeAngleFraction = m_RelaxSettings.specularLobeAngleFraction;
-                specularSettings.roughnessFraction = m_RelaxSettings.roughnessFraction;
-                specularSettings.specularVarianceBoost = m_RelaxSettings.specularVarianceBoost;
-                specularSettings.specularLobeAngleSlack = m_RelaxSettings.specularLobeAngleSlack;
-                specularSettings.disocclusionFixEdgeStoppingNormalPower = m_RelaxSettings.disocclusionFixEdgeStoppingNormalPower;
-                specularSettings.disocclusionFixMaxRadius = m_RelaxSettings.disocclusionFixMaxRadius;
-                specularSettings.disocclusionFixNumFramesToFix = m_RelaxSettings.disocclusionFixNumFramesToFix;
-                specularSettings.historyClampingColorBoxSigmaScale = m_RelaxSettings.historyClampingColorBoxSigmaScale;
-                specularSettings.spatialVarianceEstimationHistoryThreshold = m_RelaxSettings.spatialVarianceEstimationHistoryThreshold;
-                specularSettings.atrousIterationNum = m_RelaxSettings.atrousIterationNum;
-                specularSettings.minLuminanceWeight = m_RelaxSettings.minLuminanceWeight;
-                specularSettings.depthThreshold = m_RelaxSettings.depthThreshold;
-                specularSettings.luminanceEdgeStoppingRelaxation = m_RelaxSettings.luminanceEdgeStoppingRelaxation;
-                specularSettings.normalEdgeStoppingRelaxation = m_RelaxSettings.normalEdgeStoppingRelaxation;
-                specularSettings.roughnessEdgeStoppingRelaxation = m_RelaxSettings.roughnessEdgeStoppingRelaxation;
-                specularSettings.checkerboardMode = tracingMode == RESOLUTION_HALF ? nrd::CheckerboardMode::BLACK : nrd::CheckerboardMode::OFF;
-                specularSettings.enableAntiFirefly = m_RelaxSettings.enableAntiFirefly;
-                specularSettings.enableReprojectionTestSkippingWithoutMotion = m_RelaxSettings.enableReprojectionTestSkippingWithoutMotion;
-                specularSettings.enableSpecularVirtualHistoryClamping = m_RelaxSettings.enableSpecularVirtualHistoryClamping;
-                specularSettings.enableRoughnessEdgeStopping = m_RelaxSettings.enableRoughnessEdgeStopping;
-                specularSettings.enableMaterialTest = m_RelaxSettings.enableMaterialTestForSpecular;
-
-                m_Relax.SetMethodSettings(nrd::Method::RELAX_DIFFUSE, &diffuseSettings);
-                m_Relax.SetMethodSettings(nrd::Method::RELAX_SPECULAR, &specularSettings);
+                m_Relax.SetMethodSettings(nrd::Method::RELAX_DIFFUSE, &m_RelaxDiffuseSetting);
+                m_Relax.SetMethodSettings(nrd::Method::RELAX_SPECULAR, &m_RelaxSpecularSetting);
 #endif
 
                 m_Relax.Denoise(frameIndex, commandBuffer, commonSettings, userPool);
@@ -4738,7 +4823,7 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
             // NRD integration layer binds its own descriptor pool, we need to re-bind ours back
             NRI.CmdSetDescriptorPool(commandBuffer, *m_DescriptorPool);
         }
-#endif
+
         { // Composition
             helper::Annotation annotation(NRI, commandBuffer, "Composition");
 
@@ -4751,8 +4836,8 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
                 {Texture::BaseColor_Metalness, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
                 {Texture::DirectLighting, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
                 {Texture::Ambient, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
-                {Texture::Tex_FPT_SampleDiffuseRadianceHitDist, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
-                {Texture::Tex_FPT_SampleSpecularRadianceHitDist, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
+                {Texture::Diff, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
+                {Texture::Spec, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
                 // Output
                 {Texture::ComposedLighting_ViewZ, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
             };
