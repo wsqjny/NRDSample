@@ -84,21 +84,18 @@ bool isDeltaReflectionAllowedAlongDeltaTransmissionPath(const ShadingData sd, co
 }
 
 
-
-#if 0
-
 void setNRDPrimaryHitEmission(NRDBuffers outputNRD, const bool useNRDDemodulation, const PathState path, const uint2 pixel, const bool isPrimaryHit, const float3 emission)
 {
     if (isPrimaryHit && path.getSampleIdx() == 0)
     {
         if (useNRDDemodulation)
         {
-            outputNRD.primaryHitEmission[pixel] = float4(emission, 1.f);
+            gOut_primaryHitEmission[pixel] = float4(emission, 1.f);
         }
         else
         {
             // Clear buffers on primary hit only if demodulation is disabled.
-            outputNRD.primaryHitEmission[pixel] = 0.f;
+            gOut_primaryHitEmission[pixel] = 0.f;
         }
     }
 }
@@ -109,47 +106,47 @@ void setNRDPrimaryHitReflectance(NRDBuffers outputNRD, const bool useNRDDemodula
     {
         if (useNRDDemodulation)
         {
-            outputNRD.primaryHitDiffuseReflectance[pixel] = float4(bsdfProperties.diffuseReflectionAlbedo, 1.f);
+            gOut_primaryHitDiffuseReflectance[pixel] = float4(bsdfProperties.diffuseReflectionAlbedo, 1.f);
 
             const float NdotV = saturate(dot(sd.N, sd.V));
             const float ggxAlpha = bsdfProperties.roughness * bsdfProperties.roughness;
             const float3 specularReflectance = approxSpecularIntegralGGX(bsdfProperties.specularReflectionAlbedo, ggxAlpha, NdotV);
-            outputNRD.primaryHitSpecularReflectance[pixel] = float4(specularReflectance, 1.f);
+            gOut_PrimaryHitSpecularReflectance[pixel] = float4(specularReflectance, 1.f);
         }
         else
         {
             // Clear buffers on primary hit only if demodulation is disabled.
-            outputNRD.primaryHitDiffuseReflectance[pixel] = 1.f;
-            outputNRD.primaryHitSpecularReflectance[pixel] = 1.f;
+            gOut_primaryHitDiffuseReflectance[pixel] = 1.f;
+            gOut_PrimaryHitSpecularReflectance[pixel] = 1.f;
         }
     }
 }
 
-void setNRDSampleHitDist(NRDBuffers outputNRD, const PathState path, const uint outSampleIdx)
+void setNRDSampleHitDist(NRDBuffers outputNRD, const PathState path, const uint2 outSampleIdx)
 {
     if (path.getVertexIndex() == 2)
     {
-        outputNRD.sampleHitDist[outSampleIdx] = float(path.sceneLength);
+        gOut_SampleHitDist[outSampleIdx] = float(path.sceneLength);
     }
 }
 
-void setNRDSampleEmission(NRDBuffers outputNRD, const bool useNRDDemodulation, const PathState path, const uint outSampleIdx, const bool isPrimaryHit, const float3 emission)
+void setNRDSampleEmission(NRDBuffers outputNRD, const bool useNRDDemodulation, const PathState path, const uint2 outSampleIdx, const bool isPrimaryHit, const float3 emission)
 {
     if (useNRDDemodulation)
     {
         // Always demodulate emission on the primary hit (it seconds as a clear).
         if (isPrimaryHit)
         {
-            outputNRD.sampleEmission[outSampleIdx] = float4(emission, 1.f);
+            gOut_SampleEmission[outSampleIdx] = float4(emission, 1.f);
         }
     }
     else if (isPrimaryHit)
     {
-        outputNRD.sampleEmission[outSampleIdx] = 0.f;
+        gOut_SampleEmission[outSampleIdx] = 0.f;
     }
 }
 
-void setNRDSampleReflectance(NRDBuffers outputNRD, const bool useNRDDemodulation, const PathState path, const uint outSampleIdx, const bool isPrimaryHit, const ShadingData sd, const BSDFProperties bsdfProperties)
+void setNRDSampleReflectance(NRDBuffers outputNRD, const bool useNRDDemodulation, const PathState path, const uint2 outSampleIdx, const bool isPrimaryHit, const ShadingData sd, const BSDFProperties bsdfProperties)
 {
     if (useNRDDemodulation)
     {
@@ -158,54 +155,26 @@ void setNRDSampleReflectance(NRDBuffers outputNRD, const bool useNRDDemodulation
         {
             if (path.isDiffusePrimaryHit())
             {
-                outputNRD.sampleReflectance[outSampleIdx] = float4(bsdfProperties.diffuseReflectionAlbedo, 1.f);
+                gOut_SampleReflectance[outSampleIdx] = float4(bsdfProperties.diffuseReflectionAlbedo, 1.f);
             }
             else if (path.isSpecularPrimaryHit())
             {
                 const float NdotV = saturate(dot(sd.N, sd.V));
                 const float ggxAlpha = bsdfProperties.roughness * bsdfProperties.roughness;
                 const float3 specularReflectance = approxSpecularIntegralGGX(bsdfProperties.specularReflectionAlbedo, ggxAlpha, NdotV);
-                outputNRD.sampleReflectance[outSampleIdx] = float4(specularReflectance, 1.f);
+                gOut_SampleReflectance[outSampleIdx] = float4(specularReflectance, 1.f);
             }
             else
             {
-                outputNRD.sampleReflectance[outSampleIdx] = 1.f;
+                gOut_SampleReflectance[outSampleIdx] = 1.f;
             }
         }
     }
     else if (isPrimaryHit)
     {
-        outputNRD.sampleReflectance[outSampleIdx] = 1.f;
+        gOut_SampleReflectance[outSampleIdx] = 1.f;
     }
 }
-
-#endif
-
-
-
-void setNRDSampleHitDist(inout PathState path)
-{
-    if (path.getVertexIndex() == 2)
-    {
-        path.outSceneLength = path.sceneLength;
-    }
-}
-
-void setNRDPrimaryLobe(inout PathState path, bool isPrimaryHit)
-{
-    if (isPrimaryHit)
-    {
-        if (path.isDiffusePrimaryHit())
-        {
-            path.outIsDiffsue = true;
-        }
-        else if (path.isSpecularPrimaryHit())
-        {
-            path.outIsDiffsue = false;
-        }
-    }
-}
-
 
 
 /** Write out delta reflection guide buffers.

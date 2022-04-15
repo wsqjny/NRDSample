@@ -11,7 +11,7 @@ license agreement from NVIDIA CORPORATION is strictly prohibited.
 #if( !defined( COMPILER_FXC ) )
 
 
-#define DELTA_REFLECTION_PASS
+//#define DELTA_REFLECTION_PASS
 //#define DELTA_TRANSMISSION_PASS
 
 
@@ -29,9 +29,6 @@ NRI_RESOURCE( Texture2D<float3>, gIn_Ambient, t, 5, 1 );
 NRI_RESOURCE( Texture2D<float3>, gIn_Motion, t, 6, 1 );
 
 // Outputs
-NRI_RESOURCE( RWTexture2D<float4>, gOut_Diff, u, 7, 1 );
-NRI_RESOURCE( RWTexture2D<float4>, gOut_Spec, u, 8, 1 );
-
 #include "FalcorNRDBuffers.hlsli"
 
 
@@ -369,8 +366,8 @@ void main( uint2 pixelPos : SV_DispatchThreadId )
     float viewZ = gIn_ViewZ[ pixelPos ];
     if( abs( viewZ ) == INF )
     {
-        gOut_Diff[ outPixelPos ] = 0;
-        gOut_Spec[ outPixelPos ] = 0;
+        //gOut_Diff[ outPixelPos ] = 0;
+        //gOut_Spec[ outPixelPos ] = 0;
         return;
     }
 
@@ -399,8 +396,7 @@ void main( uint2 pixelPos : SV_DispatchThreadId )
     uint checkerboard = STL::Sequence::CheckerBoard( pixelPos, gFrameIndex ) != 0;
     
     float mip = 0.0;
-    float hitT = 0.0;
-    
+    float hitT = 0.0;   
 
 
 
@@ -485,40 +481,12 @@ void main( uint2 pixelPos : SV_DispatchThreadId )
         }
     }
 
-    // output nrd
-    {   
-        float pathLengthMod = path.outSceneLength;
-        bool isSample1Diffuse = path.outIsDiffsue;
 
+    // Output
+#if !defined(DELTA_REFLECTION_PASS) && !defined(DELTA_TRANSMISSION_PASS)
+    gPathTracer.writeOutput(path);
+#endif
 
-        float3 irradiance = path.L;
-
-        // De-modulate materials for denoising
-        float3 V = GetViewVector(primaryFalcorPayload.X);
-        float3 N = primaryFalcorPayload.N;
-        float NoV0 = abs(dot(N, V));
-
-        float3 envBRDF0 = STL::BRDF::EnvironmentTerm_Ross(primaryFalcorPayload.specular, NoV0, primaryFalcorPayload.roughness);
-        envBRDF0 = max(envBRDF0, 0.001);
-
-        irradiance /= isSample1Diffuse ? primaryFalcorPayload.diffuse : envBRDF0;
-
-
-
-        float normDist = REBLUR_FrontEnd_GetNormHitDist(pathLengthMod, viewZ, gHitDistParams, isSample1Diffuse ? 1.0 : primaryFalcorPayload.roughness);
-        float4 nrdData = REBLUR_FrontEnd_PackRadianceAndHitDist(irradiance, normDist, USE_SANITIZATION);
-        if (gDenoiserType != REBLUR)
-            nrdData = RELAX_FrontEnd_PackRadianceAndHitDist(irradiance, pathLengthMod, USE_SANITIZATION);
-
-        diffIndirect += nrdData * float(isSample1Diffuse);
-        specIndirect += nrdData * float(!isSample1Diffuse);
-    }
-
-    {
-        gOut_Diff[outPixelPos] = diffIndirect;
-
-        gOut_Spec[ outPixelPos ] = specIndirect;
-    }
 
 #endif
 }

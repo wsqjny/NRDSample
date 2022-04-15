@@ -25,9 +25,20 @@ struct NRDBuffers
     //RWTexture2D<float4> deltaTransmissionPosW;                  ///< Output per-pixel delta transmission world position. Only valid if kOutputNRDAdditionalData == true.
 };
 
+// Sample
+NRI_RESOURCE(RWTexture2D<float4>,   gOut_SampleRadiance,                            u, 7, 1);
+NRI_RESOURCE(RWTexture2D<float>,    gOut_SampleHitDist,                             u, 8, 1);
+NRI_RESOURCE(RWTexture2D<float4>,   gOut_SampleEmission,                            u, 9, 1);
+NRI_RESOURCE(RWTexture2D<float4>,   gOut_SampleReflectance,                         u, 10, 1);
 
-NRI_RESOURCE(RWTexture2D<float4>,   gOut_DeltaReflectionReflectance,                u, 9, 1);
-NRI_RESOURCE(RWTexture2D<float4>,   gOut_DeltaReflectionEmission,                   u, 10, 1);
-NRI_RESOURCE(RWTexture2D<float4>,   gOut_DeltaReflectionNormWRoughMaterialID,       u, 11, 1);
-NRI_RESOURCE(RWTexture2D<float>,    gOut_DeltaReflectionPathLength,                 u, 12, 1);
-NRI_RESOURCE(RWTexture2D<float>,    gOut_DeltaReflectionHitDist,                    u, 13, 1);
+// Primary
+NRI_RESOURCE(RWTexture2D<float4>,   gOut_primaryHitEmission,                        u, 11, 1);
+NRI_RESOURCE(RWTexture2D<float4>,   gOut_primaryHitDiffuseReflectance,              u, 12, 1);
+NRI_RESOURCE(RWTexture2D<float4>,   gOut_PrimaryHitSpecularReflectance,             u, 13, 1);
+
+// DeltaReflection
+NRI_RESOURCE(RWTexture2D<float4>,   gOut_DeltaReflectionReflectance,                u, 14, 1);
+NRI_RESOURCE(RWTexture2D<float4>,   gOut_DeltaReflectionEmission,                   u, 15, 1);
+NRI_RESOURCE(RWTexture2D<float4>,   gOut_DeltaReflectionNormWRoughMaterialID,       u, 16, 1);
+NRI_RESOURCE(RWTexture2D<float>,    gOut_DeltaReflectionPathLength,                 u, 17, 1);
+NRI_RESOURCE(RWTexture2D<float>,    gOut_DeltaReflectionHitDist,                    u, 18, 1);

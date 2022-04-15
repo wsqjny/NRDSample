@@ -8,7 +8,7 @@ distribution of this software and related documentation without an express
 license agreement from NVIDIA CORPORATION is strictly prohibited.
 */
 
-#if( !defined( COMPILER_FXC ) )
+#if( 0 /* !defined( COMPILER_FXC ) */)
 
 
 //#define DELTA_REFLECTION_PASS

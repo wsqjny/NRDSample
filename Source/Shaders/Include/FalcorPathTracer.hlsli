@@ -731,21 +731,16 @@ struct PathTracer
 
 
         if (kOutputNRDData)
-        {
-            //float3 attenuatedEmission = 0.f;
+        {            
+            const uint2 pixel = path.getPixel();
+            //const uint outSampleIdx = params.getSampleOffset(pixel, sampleOffset) + path.getSampleIdx();
 
-            //const uint2 pixel = path.getPixel();
-            //const uint outSampleIdx = params.getSampleOffset(pixel) + path.getSampleIdx();
+            setNRDPrimaryHitEmission(outputNRD, kUseNRDDemodulation, path, pixel, isPrimaryHit, attenuatedEmission);
+            setNRDPrimaryHitReflectance(outputNRD, kUseNRDDemodulation, path, pixel, isPrimaryHit, sd, bsdfProperties);
 
-            //setNRDPrimaryHitEmission(outputNRD, kUseNRDDemodulation, path, pixel, isPrimaryHit, attenuatedEmission);
-            //setNRDPrimaryHitReflectance(outputNRD, kUseNRDDemodulation, path, pixel, isPrimaryHit, sd, bsdfProperties);
-
-            //setNRDSampleHitDist(outputNRD, path, outSampleIdx);
-            //setNRDSampleEmission(outputNRD, kUseNRDDemodulation, path, outSampleIdx, isPrimaryHit, attenuatedEmission, wasDeltaOnlyPathBeforeScattering);
-            //setNRDSampleReflectance(outputNRD, kUseNRDDemodulation, path, outSampleIdx, isPrimaryHit, sd, bsdfProperties, lobes, wasDeltaOnlyPathBeforeScattering);
-
-            setNRDSampleHitDist(path);
-            setNRDPrimaryLobe(path, isPrimaryHit);
+            setNRDSampleHitDist(outputNRD, path, pixel);
+            setNRDSampleEmission(outputNRD, kUseNRDDemodulation, path, pixel, isPrimaryHit, attenuatedEmission);
+            setNRDSampleReflectance(outputNRD, kUseNRDDemodulation, path, pixel, isPrimaryHit, sd, bsdfProperties);
         }
 
         // Check if this is the last path vertex.
@@ -839,10 +834,9 @@ struct PathTracer
 
         if (kOutputNRDData)
         {
+            const uint2 pixel = path.getPixel();
             //const uint outSampleIdx = params.getSampleOffset(path.getPixel()) + path.getSampleIdx();
-            //setNRDSampleHitDist(outputNRD, path, outSampleIdx);
-
-            setNRDSampleHitDist(path);
+            setNRDSampleHitDist(outputNRD, path, pixel);
         }
 
 #if defined(DELTA_REFLECTION_PASS)
@@ -867,6 +861,69 @@ struct PathTracer
 
         path.terminate();
     }
+
+
+    /** Write path contribution to output buffer.
+    */
+    void writeOutput(const PathState path)
+    {
+        // assert(!any(isnan(path.L)));
+
+        // Log path length.
+        // logPathLength(getTerminatedPathLength(path));
+
+        const uint2 pixel = path.getPixel();
+        // const uint outIdx = params.getSampleOffset(pixel, sampleOffset) + path.getSampleIdx();
+
+        //if (kSamplesPerPixel == 1)
+        //{
+        //    // Write color directly to frame buffer.
+        //    outputColor[pixel] = float4(path.L, 1.f);
+        //}
+        //else
+        //{
+        //    // Write color to per-sample buffer.
+        //    sampleColor[outIdx].set(path.L);
+        //}
+
+        //if (kOutputGuideData)
+        //{
+        //    sampleGuideData[outIdx] = path.guideData;
+        //}
+
+        if (kOutputNRDData)
+        {
+#if 0
+            // TODO: Optimize this for 1 SPP. It doesn't have to go through resolve pass like the color above.
+            NRDRadiance data = {};
+
+            if (path.isDiffusePrimaryHit()) data.setPathType(NRDPathType::Diffuse);
+            else if (path.isSpecularPrimaryHit()) data.setPathType(NRDPathType::Specular);
+            else if (path.isDeltaReflectionPrimaryHit()) data.setPathType(NRDPathType::DeltaReflection);
+            else if (path.isDeltaTransmissionPath()) data.setPathType(NRDPathType::DeltaTransmission);
+            else data.setPathType(NRDPathType::Residual);
+
+            data.setRadiance(path.L);
+
+            outputNRD.sampleRadiance[outIdx] = data;
+#endif
+            
+            float4 data = 0;
+            data.rgb = path.L;
+            
+            if (path.isDiffusePrimaryHit()) data.a = 0.0;
+            else if (path.isSpecularPrimaryHit()) data.a = 0.1;
+            else if (path.isDeltaReflectionPrimaryHit()) data.a = 0.2;
+            else if (path.isDeltaTransmissionPath()) data.a = 0.3;
+            else data.a = 0.4;
+
+            // TODO: 
+            gOut_SampleRadiance[pixel] = data;
+        }
+    }
+
+
+
 
 
     ////- Extensions, PathTracerNRD.slang

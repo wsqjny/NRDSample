@@ -113,12 +113,21 @@ enum class Texture : uint32_t
     Final,
 
     // Falcor PT
-    Texture_FalcorPathTracer_DeltaReflectionRadianceHitDist,
-    Texture_FalcorPathTracer_DeltaReflectionReflectance,
-    Texture_FalcorPathTracer_DeltaReflectionEmission,
-    Texture_FalcorPathTracer_DeltaReflectionNormWRoughMaterialID,
-    Texture_FalcorPathTracer_DeltaReflectionPathLength,
-    Texture_FalcorPathTracer_DeltaReflectionHitDist,
+    Tex_FPT_SampleRadiance,
+    Tex_FPT_SampleHitDist,
+    Tex_FPT_SampleEmission,
+    Tex_FPT_SampleReflectance,
+
+    Tex_FPT_primaryHitEmission,
+    Tex_FPT_primaryHitDiffuseReflectance,
+    Tex_FPT_PrimaryHitSpecularReflectance,
+
+    Tex_FPT_DeltaReflectionRadianceHitDist,
+    Tex_FPT_DeltaReflectionReflectance,
+    Tex_FPT_DeltaReflectionEmission,
+    Tex_FPT_DeltaReflectionNormWRoughMaterialID,
+    Tex_FPT_DeltaReflectionPathLength,
+    Tex_FPT_DeltaReflectionHitDist,
 
     // Read-only
     NisData1,
@@ -207,20 +216,27 @@ enum class Descriptor : uint32_t
     Final_Texture,
     Final_StorageTexture,
     
-    
     // Falcor PT
-    Descriptor_FalcorPathTracer_DeltaReflectionRadianceHitDist_Texture,
-    Descriptor_FalcorPathTracer_DeltaReflectionRadianceHitDist_StorageTexture,
-    Descriptor_FalcorPathTracer_DeltaReflectionReflectance_Texture,
-    Descriptor_FalcorPathTracer_DeltaReflectionReflectance_StorageTexture,    
-    Descriptor_FalcorPathTracer_DeltaReflectionEmission_Texture,
-    Descriptor_FalcorPathTracer_DeltaReflectionEmission_StorageTexture,
-    Descriptor_FalcorPathTracer_DeltaReflectionNormWRoughMaterialID_Texture,
-    Descriptor_FalcorPathTracer_DeltaReflectionNormWRoughMaterialID_StorageTexture,
-    Descriptor_FalcorPathTracer_DeltaReflectionPathLength_Texture,
-    Descriptor_FalcorPathTracer_DeltaReflectionPathLength_StorageTexture,
-    Descriptor_FalcorPathTracer_DeltaReflectionHitDist_Texture,
-    Descriptor_FalcorPathTracer_DeltaReflectionHitDist_StorageTexture,
+#define FALCOR_TEX_DESCRIPTOR(name)             \
+    Desc_FPT_##name##_Texture,                  \
+    Desc_FPT_##name##_StorageTexture,             
+                        
+    FALCOR_TEX_DESCRIPTOR(SampleRadiance)
+    FALCOR_TEX_DESCRIPTOR(SampleHitDist)
+    FALCOR_TEX_DESCRIPTOR(SampleEmission)
+    FALCOR_TEX_DESCRIPTOR(SampleReflectance)
+
+    FALCOR_TEX_DESCRIPTOR(primaryHitEmission)
+    FALCOR_TEX_DESCRIPTOR(primaryHitDiffuseReflectance)
+    FALCOR_TEX_DESCRIPTOR(PrimaryHitSpecularReflectance)
+
+    FALCOR_TEX_DESCRIPTOR(DeltaReflectionRadianceHitDist)
+    FALCOR_TEX_DESCRIPTOR(DeltaReflectionReflectance)
+    FALCOR_TEX_DESCRIPTOR(DeltaReflectionEmission)
+    FALCOR_TEX_DESCRIPTOR(DeltaReflectionNormWRoughMaterialID)
+    FALCOR_TEX_DESCRIPTOR(DeltaReflectionPathLength)
+    FALCOR_TEX_DESCRIPTOR(DeltaReflectionHitDist)
+
 
     // Read-only
     NisData1,
@@ -1906,29 +1922,52 @@ void Sample::CreateResources(nri::Format swapChainFormat)
 
     ///-------------------------------------------------------------------------------------------------------------------------------------------------------------
     // Falcor Path Tracer
-    // { kOutputNRDDeltaReflectionRadianceHitDist, "", "Output demodulated delta reflection color (linear)", true /* optional */, ResourceFormat::RGBA32Float },
-    // { kOutputNRDDeltaReflectionReflectance,             "",     "Output delta reflection reflectance color (linear)", true /* optional */, ResourceFormat::RGBA16Float },
-    // { kOutputNRDDeltaReflectionEmission,                "",     "Output delta reflection emission color (linear)", true /* optional */, ResourceFormat::RGBA32Float },
-    // { kOutputNRDDeltaReflectionNormWRoughMaterialID,    "",     "Output delta reflection world normal, roughness, and material ID", true /* optional */, ResourceFormat::RGB10A2Unorm },
-    // { kOutputNRDDeltaReflectionPathLength,              "",     "Output delta reflection path length", true /* optional */, ResourceFormat::R16Float },
-    // { kOutputNRDDeltaReflectionHitDist,                 "",     "Output delta reflection hit distance", true /* optional */, ResourceFormat::R16Float },
-    // Texture_FalcorPathTracer_DeltaReflectionRadianceHitDist,
-    // Texture_FalcorPathTracer_DeltaReflectionReflectance,
-    // Texture_FalcorPathTracer_DeltaReflectionEmission,
-    // Texture_FalcorPathTracer_DeltaReflectionNormWRoughMaterialID,
-    // Texture_FalcorPathTracer_DeltaReflectionPathLength,
-    // Texture_FalcorPathTracer_DeltaReflectionHitDist,
-
-    CreateTexture(descriptorDescs, "Texture::FalcorPathTracer_DeltaReflectionRadianceHitDist",      nri::Format::RGBA32_SFLOAT, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
-    CreateTexture(descriptorDescs, "Texture::FalcorPathTracer_DeltaReflectionReflectance",          nri::Format::RGBA16_SFLOAT, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
-    CreateTexture(descriptorDescs, "Texture::FalcorPathTracer_DeltaReflectionEmission",             nri::Format::RGBA32_SFLOAT, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
-    CreateTexture(descriptorDescs, "Texture::FalcorPathTracer_DeltaReflectionNormWRoughMaterialID", nri::Format::R10_G10_B10_A2_UNORM, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
-    CreateTexture(descriptorDescs, "Texture::FalcorPathTracer_DeltaReflectionPathLength",           nri::Format::R16_SFLOAT, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
-    CreateTexture(descriptorDescs, "Texture::FalcorPathTracer_DeltaReflectionHitDist",              nri::Format::R16_SFLOAT, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
+#if 0
+    { kOutputColor, "", "Output color (linear)", true /* optional */, ResourceFormat::RGBA32Float },
+    { kOutputAlbedo,                                    "",     "Output albedo (linear)", true /* optional */, ResourceFormat::RGBA8Unorm },
+    { kOutputSpecularAlbedo,                            "",     "Output specular albedo (linear)", true /* optional */, ResourceFormat::RGBA8Unorm },
+    { kOutputIndirectAlbedo,                            "",     "Output indirect albedo (linear)", true /* optional */, ResourceFormat::RGBA8Unorm },
+    { kOutputNormal,                                    "",     "Output normal (linear)", true /* optional */, ResourceFormat::RGBA16Float },
+    { kOutputReflectionPosW,                            "",     "Output reflection pos (world space)", true /* optional */, ResourceFormat::RGBA32Float },
+    { kOutputRayCount,                                  "",     "Per-pixel ray count", true /* optional */, ResourceFormat::R32Uint },
+    { kOutputPathLength,                                "",     "Per-pixel path length", true /* optional */, ResourceFormat::R32Uint },
+        // NRD outputs
+    { kOutputNRDDiffuseRadianceHitDist,                 "",     "Output demodulated diffuse color (linear) and hit distance", true /* optional */, ResourceFormat::RGBA32Float },
+    { kOutputNRDSpecularRadianceHitDist,                "",     "Output demodulated specular color (linear) and hit distance", true /* optional */, ResourceFormat::RGBA32Float },
+    { kOutputNRDEmission,                               "",     "Output primary surface emission", true /* optional */, ResourceFormat::RGBA32Float },
+    { kOutputNRDDiffuseReflectance,                     "",     "Output primary surface diffuse reflectance", true /* optional */, ResourceFormat::RGBA16Float },
+    { kOutputNRDSpecularReflectance,                    "",     "Output primary surface specular reflectance", true /* optional */, ResourceFormat::RGBA16Float },
+    { kOutputNRDDeltaReflectionRadianceHitDist,         "",     "Output demodulated delta reflection color (linear)", true /* optional */, ResourceFormat::RGBA32Float },
+    { kOutputNRDDeltaReflectionReflectance,             "",     "Output delta reflection reflectance color (linear)", true /* optional */, ResourceFormat::RGBA16Float },
+    { kOutputNRDDeltaReflectionEmission,                "",     "Output delta reflection emission color (linear)", true /* optional */, ResourceFormat::RGBA32Float },
+    { kOutputNRDDeltaReflectionNormWRoughMaterialID,    "",     "Output delta reflection world normal, roughness, and material ID", true /* optional */, ResourceFormat::RGB10A2Unorm },
+    { kOutputNRDDeltaReflectionPathLength,              "",     "Output delta reflection path length", true /* optional */, ResourceFormat::R16Float },
+    { kOutputNRDDeltaReflectionHitDist,                 "",     "Output delta reflection hit distance", true /* optional */, ResourceFormat::R16Float },
+    { kOutputNRDDeltaTransmissionRadianceHitDist,       "",     "Output demodulated delta transmission color (linear)", true /* optional */, ResourceFormat::RGBA32Float },
+    { kOutputNRDDeltaTransmissionReflectance,           "",     "Output delta transmission reflectance color (linear)", true /* optional */, ResourceFormat::RGBA16Float },
+    { kOutputNRDDeltaTransmissionEmission,              "",     "Output delta transmission emission color (linear)", true /* optional */, ResourceFormat::RGBA32Float },
+    { kOutputNRDDeltaTransmissionNormWRoughMaterialID,  "",     "Output delta transmission world normal, roughness, and material ID", true /* optional */, ResourceFormat::RGB10A2Unorm },
+    { kOutputNRDDeltaTransmissionPathLength,            "",     "Output delta transmission path length", true /* optional */, ResourceFormat::R16Float },
+    { kOutputNRDDeltaTransmissionPosW,                  "",     "Output delta transmission position", true /* optional */, ResourceFormat::RGBA32Float },
+    { kOutputNRDResidualRadianceHitDist,                "",     "Output residual color (linear) and hit distance", true /* optional */, ResourceFormat::RGBA32Float },
+#endif
+                
+    CreateTexture(descriptorDescs, "Texture::FPT_SampleRadiance",                       nri::Format::RGBA32_SFLOAT, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_SampleHitDist",                        nri::Format::R16_SFLOAT, w, h, 1, 1,    nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_SampleEmission",                       nri::Format::RGBA32_SFLOAT, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_SampleReflectance",                    nri::Format::RGBA16_SFLOAT, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
+    
+    CreateTexture(descriptorDescs, "Texture::FPT_primaryHitEmission",                   nri::Format::RGBA32_SFLOAT, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_primaryHitDiffuseReflectance",         nri::Format::RGBA16_SFLOAT, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_PrimaryHitSpecularReflectance",        nri::Format::RGBA16_SFLOAT, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
+                                             
+    CreateTexture(descriptorDescs, "Texture::FPT_DeltaReflectionRadianceHitDist",       nri::Format::RGBA32_SFLOAT, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_DeltaReflectionReflectance",           nri::Format::RGBA16_SFLOAT, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_DeltaReflectionEmission",              nri::Format::RGBA32_SFLOAT, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_DeltaReflectionNormWRoughMaterialID",  nri::Format::R10_G10_B10_A2_UNORM, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_DeltaReflectionPathLength",            nri::Format::R16_SFLOAT, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_DeltaReflectionHitDist",               nri::Format::R16_SFLOAT, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
     ///-------------------------------------------------------------------------------------------------------------------------------------------------------------
-
-
-
 
     // Read-only
     CreateTexture(descriptorDescs, "Texture::NisData1", nri::Format::RGBA16_SFLOAT, kFilterSize / 4, kPhaseCount, 1, 1,
@@ -2606,13 +2645,20 @@ void Sample::CreateDescriptorSets()
 
         const nri::Descriptor* storageTextures[] =
         {
-            Get(Descriptor::Unfiltered_Diff_StorageTexture),
-            Get(Descriptor::Unfiltered_Spec_StorageTexture),
-            Get(Descriptor::Descriptor_FalcorPathTracer_DeltaReflectionReflectance_StorageTexture),
-            Get(Descriptor::Descriptor_FalcorPathTracer_DeltaReflectionEmission_StorageTexture),
-            Get(Descriptor::Descriptor_FalcorPathTracer_DeltaReflectionNormWRoughMaterialID_StorageTexture),
-            Get(Descriptor::Descriptor_FalcorPathTracer_DeltaReflectionPathLength_StorageTexture),
-            Get(Descriptor::Descriptor_FalcorPathTracer_DeltaReflectionHitDist_StorageTexture),
+            Get(Descriptor::Desc_FPT_SampleRadiance_StorageTexture),
+            Get(Descriptor::Desc_FPT_SampleHitDist_StorageTexture),
+            Get(Descriptor::Desc_FPT_SampleEmission_StorageTexture),
+            Get(Descriptor::Desc_FPT_SampleReflectance_StorageTexture),
+
+            Get(Descriptor::Desc_FPT_primaryHitEmission_StorageTexture),
+            Get(Descriptor::Desc_FPT_primaryHitDiffuseReflectance_StorageTexture),
+            Get(Descriptor::Desc_FPT_PrimaryHitSpecularReflectance_StorageTexture),
+
+            Get(Descriptor::Desc_FPT_DeltaReflectionReflectance_StorageTexture),
+            Get(Descriptor::Desc_FPT_DeltaReflectionEmission_StorageTexture),
+            Get(Descriptor::Desc_FPT_DeltaReflectionNormWRoughMaterialID_StorageTexture),
+            Get(Descriptor::Desc_FPT_DeltaReflectionPathLength_StorageTexture),
+            Get(Descriptor::Desc_FPT_DeltaReflectionHitDist_StorageTexture),
         };
 
         const nri::DescriptorRangeUpdateDesc descriptorRangeUpdateDesc[] =
@@ -2639,7 +2685,7 @@ void Sample::CreateDescriptorSets()
             Get(Descriptor::IntegrateBRDF_Texture),
             Get(Descriptor::Diff_Texture),
             Get(Descriptor::Spec_Texture),
-            Get(Descriptor::Descriptor_FalcorPathTracer_DeltaReflectionReflectance_Texture),
+            Get(Descriptor::Desc_FPT_primaryHitDiffuseReflectance_StorageTexture),
         };
 
         const nri::Descriptor* storageTextures[] =
