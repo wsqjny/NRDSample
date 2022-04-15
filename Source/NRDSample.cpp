@@ -987,7 +987,14 @@ void Sample::PrepareFrame(uint32_t frameIndex)
                             "Mesh",
                             "Mip level (primary)",
                             "Mip level (specular)",
-                            "PT Delta Reflection",
+                            "FPT Diff Reflectance",
+                            "FPT Diff Radiance",
+                            "FPT Spec Reflectance",
+                            "FPT Spec Radiance",
+                            "FPT Delta Ref Reflectance",
+                            "FPT Delta Ref Radiance",
+                            "FPT Delta Trans Reflectance",
+                            "FPT Delta Trans Radiance",
                         };
                     #endif
 

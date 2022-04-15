@@ -102,4 +102,46 @@ void main( int2 dispatchThreadId : SV_DispatchThreadId )
     }
 
     gOutput[pixel] = outputColor;
+
+
+
+    // Debug!
+    if (gOnScreen != SHOW_FINAL)
+    {
+        float4 debug = 0.0;
+        if (gOnScreen == SHOW_FPT_DIFFUSE_REFLECTANCE)
+        {
+            debug = gDiffuseReflectance[pixel];
+        }
+        else if (gOnScreen == SHOW_FPT_DIFFUSE_RADIANCE)
+        {
+            debug = gDiffuseRadiance[pixel];
+        }
+        else if (gOnScreen == SHOW_FPT_SPECULAR_REFLECTANCE)
+        {
+            debug = gSpecularReflectance[pixel];
+        }
+        else if (gOnScreen == SHOW_FPT_SPECULAR_RADIANCE)
+        {
+            debug = gSpecularRadiance[pixel];
+        }
+        else if (gOnScreen == SHOW_FPT_DELTA_REF_REFLECTANCE)
+        {
+            debug = gDeltaReflectionReflectance[pixel];
+        }
+        else if (gOnScreen == SHOW_FPT_DELTA_REF_RADIANCE)
+        {
+            debug = gDeltaReflectionRadiance[pixel];
+        }
+        else if (gOnScreen == SHOW_FPT_DELTA_TRA_REFLECTANCE)
+        {
+            debug = gDeltaTransmissionReflectance[pixel];
+        }
+        else if (gOnScreen == SHOW_FPT_DELTA_TRA_RADIANCE)
+        {
+            debug = gDeltaTransmissionRadiance[pixel];
+        }
+
+        gOutput[pixel] = debug;
+    }
 }

@@ -164,7 +164,14 @@ NRI_RESOURCE( SamplerState, gLinearSampler, s, 3, 0 );
 #define SHOW_MIP_SPECULAR                   13
 
 // Falcor PT
-#define SHOW_FPT_DELTA_REFLECTION           14
+#define SHOW_FPT_DIFFUSE_REFLECTANCE        14
+#define SHOW_FPT_DIFFUSE_RADIANCE           15
+#define SHOW_FPT_SPECULAR_REFLECTANCE       16
+#define SHOW_FPT_SPECULAR_RADIANCE          17
+#define SHOW_FPT_DELTA_REF_REFLECTANCE      18
+#define SHOW_FPT_DELTA_REF_RADIANCE         19
+#define SHOW_FPT_DELTA_TRA_REFLECTANCE      20
+#define SHOW_FPT_DELTA_TRA_RADIANCE         21
 
 
 #define FP16_MAX                            65504.0
