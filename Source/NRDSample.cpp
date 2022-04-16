@@ -540,8 +540,11 @@ public:
     Sample() :
         m_Reblur(BUFFERED_FRAME_MAX_NUM),
         m_Relax(BUFFERED_FRAME_MAX_NUM),
+        m_RelaxDiffuse(BUFFERED_FRAME_MAX_NUM),
         m_Sigma(BUFFERED_FRAME_MAX_NUM),
-        m_Reference(BUFFERED_FRAME_MAX_NUM)
+        m_Reference(BUFFERED_FRAME_MAX_NUM),
+        m_ReflectionMV(BUFFERED_FRAME_MAX_NUM),
+        m_TransmissionMV(BUFFERED_FRAME_MAX_NUM)
     {}
 
     ~Sample();
@@ -617,8 +620,12 @@ private:
 private:
     NrdIntegration m_Reblur;
     NrdIntegration m_Relax;
+    NrdIntegration m_RelaxDiffuse;
     NrdIntegration m_Sigma;
     NrdIntegration m_Reference;
+    NrdIntegration m_ReflectionMV;
+    NrdIntegration m_TransmissionMV;
+    
 
     DlssIntegration m_DLSS;
 
@@ -682,8 +689,11 @@ Sample::~Sample()
 
     m_Reblur.Destroy();
     m_Relax.Destroy();
+    m_RelaxDiffuse.Destroy();
     m_Sigma.Destroy();
     m_Reference.Destroy();
+    m_ReflectionMV.Destroy();
+    m_TransmissionMV.Destroy();
 
     for (Frame& frame : m_Frames)
     {
@@ -854,6 +864,21 @@ bool Sample::Initialize(nri::GraphicsAPI graphicsAPI)
         NRI_ABORT_ON_FALSE( m_Relax.Initialize(*m_Device, NRI, NRI, denoiserCreationDesc) );
     }
 
+
+    // RELAX Diffuse
+    {
+        const nrd::MethodDesc methodDescs[] =
+        {
+            { nrd::Method::RELAX_DIFFUSE, (uint16_t)m_ScreenResolution.x, (uint16_t)m_ScreenResolution.y },         
+        };
+
+        nrd::DenoiserCreationDesc denoiserCreationDesc = {};
+        denoiserCreationDesc.requestedMethods = methodDescs;
+        denoiserCreationDesc.requestedMethodNum = helper::GetCountOf(methodDescs);
+
+        NRI_ABORT_ON_FALSE(m_RelaxDiffuse.Initialize(*m_Device, NRI, NRI, denoiserCreationDesc));
+    }
+
     // SIGMA
     {
         const nrd::MethodDesc methodDescs[] =
@@ -878,6 +903,30 @@ bool Sample::Initialize(nri::GraphicsAPI graphicsAPI)
         denoiserCreationDesc.requestedMethods = methodDescs;
         denoiserCreationDesc.requestedMethodNum = helper::GetCountOf(methodDescs);
         NRI_ABORT_ON_FALSE( m_Reference.Initialize(*m_Device, NRI, NRI, denoiserCreationDesc) );
+    }
+
+    {
+        const nrd::MethodDesc methodDescs[] =
+        {
+            { nrd::Method::SPECULAR_REFLECTION_MV, (uint16_t)m_ScreenResolution.x, (uint16_t)m_ScreenResolution.y },
+        };
+
+        nrd::DenoiserCreationDesc denoiserCreationDesc = {};
+        denoiserCreationDesc.requestedMethods = methodDescs;
+        denoiserCreationDesc.requestedMethodNum = helper::GetCountOf(methodDescs);
+        NRI_ABORT_ON_FALSE(m_ReflectionMV.Initialize(*m_Device, NRI, NRI, denoiserCreationDesc));
+    }
+
+    {
+        const nrd::MethodDesc methodDescs[] =
+        {
+            { nrd::Method::SPECULAR_DELTA_MV, (uint16_t)m_ScreenResolution.x, (uint16_t)m_ScreenResolution.y },
+        };
+
+        nrd::DenoiserCreationDesc denoiserCreationDesc = {};
+        denoiserCreationDesc.requestedMethods = methodDescs;
+        denoiserCreationDesc.requestedMethodNum = helper::GetCountOf(methodDescs);
+        NRI_ABORT_ON_FALSE(m_TransmissionMV.Initialize(*m_Device, NRI, NRI, denoiserCreationDesc));
     }
 
     m_Camera.Initialize(m_Scene.aabb.GetCenter(), m_Scene.aabb.vMin, CAMERA_RELATIVE);
@@ -2062,8 +2111,11 @@ void Sample::CreatePipelines()
 
         m_Reblur.CreatePipelines();
         m_Relax.CreatePipelines();
+        m_RelaxDiffuse.CreatePipelines();
         m_Sigma.CreatePipelines();
         m_Reference.CreatePipelines();
+        m_ReflectionMV.CreatePipelines();
+        m_TransmissionMV.CreatePipelines();
     }
 
     utils::ShaderCodeStorage shaderCodeStorage;
@@ -4775,13 +4827,11 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
             NRI.CmdSetDescriptorPool(commandBuffer, *m_DescriptorPool);
         }
 
-#if 0
         // NRD Delta Reflection
-        if (0)
         {
             // Step1: Motion Vector.
             {
-                static bool bEnableDeltaReflectionMV = false;
+                static bool bEnableDeltaReflectionMV = true;
                 static bool bDRMV_WorldSpaceMotion = false;
                 if (bEnableDeltaReflectionMV)
                 {
@@ -4794,8 +4844,8 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
                         NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_VIEWZ, { &GetState(Texture::ViewZ), GetFormat(Texture::ViewZ) });                        
 
                         // Specular
-                        NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_SPEC_HITDIST, { &GetState(Texture::Tex_FPT_SampleSpecularRadianceHitDist), GetFormat(Texture::Tex_FPT_SampleSpecularRadianceHitDist) });
-                        NrdIntegration_SetResource(userPool, nrd::ResourceType::OUT_REFLECTION_MV, { &GetState(Texture::Tex_FPT_SampleSpecularRadianceHitDist), GetFormat(Texture::Tex_FPT_SampleSpecularRadianceHitDist) });
+                        NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_SPEC_HITDIST, { &GetState(Texture::Tex_FPT_DeltaReflectionRadianceHitDist), GetFormat(Texture::Tex_FPT_DeltaReflectionRadianceHitDist) });
+                        NrdIntegration_SetResource(userPool, nrd::ResourceType::OUT_REFLECTION_MV, { &GetState(Texture::Tex_FPT_DeltaReflectionMotionVector), GetFormat(Texture::Tex_FPT_DeltaReflectionMotionVector) });
                     }
 
                     helper::Annotation annotation(NRI, commandBuffer, "Specular Reflection MV");
@@ -4836,32 +4886,31 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
 
             // Step3: Denoise
             {
-
                 NrdUserPool userPool = {};
                 {
                     // Common
-                    NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_MV, { &GetState(Texture::Motion), GetFormat(Texture::Motion) });
-                    NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_NORMAL_ROUGHNESS, { &GetState(Texture::Normal_Roughness), GetFormat(Texture::Normal_Roughness) });
-                    NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_VIEWZ, { &GetState(Texture::ViewZ), GetFormat(Texture::ViewZ) });
+                    NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_MV, { &GetState(Texture::Tex_FPT_DeltaReflectionMotionVector), GetFormat(Texture::Tex_FPT_DeltaReflectionMotionVector) });
+                    NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_NORMAL_ROUGHNESS, { &GetState(Texture::Tex_FPT_DeltaReflectionNormWRoughMaterialID), GetFormat(Texture::Tex_FPT_DeltaReflectionNormWRoughMaterialID) });
+                    NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_VIEWZ, { &GetState(Texture::Tex_FPT_DeltaReflectionPathLength), GetFormat(Texture::Tex_FPT_DeltaReflectionPathLength) });
 
                     // Diffuse
-                    NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST, { &GetState(Texture::Tex_FPT_SampleDiffuseRadianceHitDist), GetFormat(Texture::Tex_FPT_SampleDiffuseRadianceHitDist) });
-                    NrdIntegration_SetResource(userPool, nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST, { &GetState(Texture::Diff), GetFormat(Texture::Diff) });
+                    NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST, { &GetState(Texture::Tex_FPT_DeltaReflectionRadianceHitDist), GetFormat(Texture::Tex_FPT_DeltaReflectionRadianceHitDist) });
+                    NrdIntegration_SetResource(userPool, nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST, { &GetState(Texture::Tex_FPT_DeltaReflectionRadianceHitDist), GetFormat(Texture::Tex_FPT_DeltaReflectionRadianceHitDist) });
                 }
 
-                helper::Annotation annotation(NRI, commandBuffer, "Indirect lighting denoising");
+                helper::Annotation annotation(NRI, commandBuffer, "NRD Delta Reflection Denoise");
 
                 // Relax diffuse method.
                 {
-                    m_Relax.SetMethodSettings(nrd::Method::RELAX_DIFFUSE, &m_RelaxSettings);
-                    m_Relax.Denoise(frameIndex, commandBuffer, commonSettings, userPool);
+                    m_RelaxDiffuse.SetMethodSettings(nrd::Method::RELAX_DIFFUSE, &m_RelaxDiffuseSetting);
+                    m_RelaxDiffuse.Denoise(frameIndex, commandBuffer, commonSettings, userPool);
                 }
 
                 // NRD integration layer binds its own descriptor pool, we need to re-bind ours back
                 NRI.CmdSetDescriptorPool(commandBuffer, *m_DescriptorPool);
             }
         }
-#endif
+
         { // Composition
             helper::Annotation annotation(NRI, commandBuffer, "Composition");
 
