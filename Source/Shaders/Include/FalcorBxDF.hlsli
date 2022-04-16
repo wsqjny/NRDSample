@@ -262,7 +262,7 @@ struct SpecularReflectionMicrofacet : IBxDF
 
         // Sample the GGX distribution to find a microfacet normal (half vector).
 #if EnableVNDFSampling
-        float3 h = sampleGGX_VNDF(alpha, wi, STL::Rng::GetFloat2(), pdf);    // pdf = G1(wi) * D(h) * max(0,dot(wi,h)) / wi.z
+        float3 h = sampleGGX_VNDF(alpha, wi, sampleNext2D(sg), pdf);    // pdf = G1(wi) * D(h) * max(0,dot(wi,h)) / wi.z
 #else
         float3 h = sampleGGX_NDF(alpha, sampleNext2D(sg), pdf);         // pdf = D(h) * h.z
 #endif
@@ -623,7 +623,7 @@ struct FalcorBSDF : IBxDF
         alpha = max(alpha, kMinGGXAlpha);
 #endif
 
-        uint activeLobes = LobeType_All;// sd.mtl.getActiveLobes();
+        uint activeLobes = sd.mtlActiveLobe;
 
         specularReflection.albedo = data.specular;
         specularReflection.alpha = alpha;

@@ -122,6 +122,7 @@ struct PathTracer
     /*******************************************************************
                               Member functions
     *******************************************************************/
+
     /** Check if the path has finished all surface bounces and needs to be terminated.
         Note: This is expected to be called after generateScatterRay(), which increments the bounce counters.
         \param[in] path Path state.
@@ -213,10 +214,8 @@ struct PathTracer
     bool generateScatterRay(const ShadingData sd, const StandardBSDF bsdf, inout PathState path, const FalcorPayload falcorPayload)
     {
         BSDFSample result;
-
         bool valid = bsdf.sample(sd, path.sg, result, kUseBSDFSampling);
-        if (valid)
-            valid = generateScatterRay(result, sd, bsdf, path);
+        if (valid) valid = generateScatterRay(result, sd, bsdf, path);
 
         // Ignore valid on purpose for now.
         if (kOutputNRDData)
@@ -326,11 +325,11 @@ struct PathTracer
     }
 
     /** Evaluates the currently configured heuristic for multiple importance sampling (MIS).
-    \param[in] n0 Number of samples taken from the first sampling strategy.
-    \param[in] p0 Pdf for the first sampling strategy.
-    \param[in] n1 Number of samples taken from the second sampling strategy.
-    \param[in] p1 Pdf for the second sampling strategy.
-    \return Weight for the contribution from the first strategy (p0).
+        \param[in] n0 Number of samples taken from the first sampling strategy.
+        \param[in] p0 Pdf for the first sampling strategy.
+        \param[in] n1 Number of samples taken from the second sampling strategy.
+        \param[in] p1 Pdf for the second sampling strategy.
+        \return Weight for the contribution from the first strategy (p0).
     */
     float evalMIS(float n0, float p0, float n1, float p1)
     {
@@ -393,10 +392,10 @@ struct PathTracer
     }
 
     /** Generates a light sample on the analytic lights.
-    \param[in] vertex Path vertex.
-    \param[in,out] sg Sample generator.
-    \param[out] ls Struct describing valid samples.
-    \return True if the sample is valid and has nonzero contribution, false otherwise.
+        \param[in] vertex Path vertex.
+        \param[in,out] sg Sample generator.
+        \param[out] ls Struct describing valid samples.
+        \return True if the sample is valid and has nonzero contribution, false otherwise.
     */
     bool generateAnalyticLightSample(const PathVertex vertex, inout SampleGenerator sg, out LightSample ls)
     {
@@ -427,7 +426,7 @@ struct PathTracer
     }
 
     /** Return the probabilities for selecting different light types.
-    \param[out] p Probabilities.
+        \param[out] p Probabilities.
     */
     void getLightTypeSelectionProbabilities(out float p[3])
     {
@@ -447,15 +446,15 @@ struct PathTracer
         p[2] *= invSum;
     }
 
-    float getEnvMapSelectionProbability() { float p[3]; getLightTypeSelectionProbabilities(p); return p[0]; }
+    float getEnvMapSelectionProbability()   { float p[3]; getLightTypeSelectionProbabilities(p); return p[0]; }
     float getEmissiveSelectionProbability() { float p[3]; getLightTypeSelectionProbabilities(p); return p[1]; }
-    float getAnalyicSelectionProbability() { float p[3]; getLightTypeSelectionProbabilities(p); return p[2]; }
+    float getAnalyicSelectionProbability()  { float p[3]; getLightTypeSelectionProbabilities(p); return p[2]; }
 
     /** Select a light type for sampling.
-    \param[out] lightType Selected light type.
-    \param[out] pdf Probability for selected type.
-    \param[in,out] sg Sample generator.
-    \return Return true if selection is valid.
+        \param[out] lightType Selected light type.
+        \param[out] pdf Probability for selected type.
+        \param[in,out] sg Sample generator.
+        \return Return true if selection is valid.
     */
     bool selectLightType(out uint lightType, out float pdf, inout SampleGenerator sg)
     {
@@ -528,9 +527,9 @@ struct PathTracer
     }
 
     /** Apply russian roulette to terminate paths early.
-    \param[in,out] path Path.
-    \param[in] u Uniform random number in [0,1).
-    \return Returns true if path was terminated.
+        \param[in,out] path Path.
+        \param[in] u Uniform random number in [0,1).
+        \return Returns true if path was terminated.
     */
     bool terminatePathByRussianRoulette(inout PathState path, float u)
     {
@@ -546,10 +545,10 @@ struct PathTracer
     }
 
     /** Handle the case when a scatter ray hits a surface.
-    After handling the hit, a new scatter ray is generated or the path is terminated.
-    \param[in,out] path The path state.
-    \param[in,out] vq Visibility query.
-*/
+        After handling the hit, a new scatter ray is generated or the path is terminated.
+        \param[in,out] path The path state.
+        \param[in,out] vq Visibility query.
+    */
     void handleHit(inout PathState path, const FalcorPayload falcorPayload, const VisibilityQuery vq)
     {
         // Upon hit:
@@ -645,20 +644,18 @@ struct PathTracer
             path.origin = sd.computeNewRayOrigin();
         }
 
-
         // Determine if BSDF has non-delta lobes.
         const uint lobes = bsdf.getLobes(sd);
         const bool hasNonDeltaLobes = (lobes & (uint)LobeType_NonDelta) != 0;
 
         // Check if we should apply NEE.
-        const bool applyNEE = kUseNEE && hasNonDeltaLobes && !isPrimaryHit;
+        const bool applyNEE = kUseNEE && hasNonDeltaLobes;
 
         // Check if sample from RTXDI should be applied instead of NEE.
         const bool applyRTXDI = kUseRTXDI && isPrimaryHit && hasNonDeltaLobes;
 
         // TODO: Support multiple shadow rays.
         path.setLightSampled(false, false);
-
         if (applyNEE || applyRTXDI)
         {
             LightSample ls;
@@ -729,9 +726,8 @@ struct PathTracer
         //    setIndirectSurfaceGuideData(path.guideData, sd, bsdfProperties);
         //}
 
-
         if (kOutputNRDData)
-        {            
+        {
             const uint2 pixel = path.getPixel();
             //const uint outSampleIdx = params.getSampleOffset(pixel, sampleOffset) + path.getSampleIdx();
 
@@ -739,8 +735,8 @@ struct PathTracer
             setNRDPrimaryHitReflectance(outputNRD, kUseNRDDemodulation, path, pixel, isPrimaryHit, sd, bsdfProperties);
 
             setNRDSampleHitDist(outputNRD, path, pixel);
-            setNRDSampleEmission(outputNRD, kUseNRDDemodulation, path, pixel, isPrimaryHit, attenuatedEmission);
-            setNRDSampleReflectance(outputNRD, kUseNRDDemodulation, path, pixel, isPrimaryHit, sd, bsdfProperties);
+            setNRDSampleEmission(outputNRD, kUseNRDDemodulation, path, pixel, isPrimaryHit, attenuatedEmission, wasDeltaOnlyPathBeforeScattering);
+            setNRDSampleReflectance(outputNRD, kUseNRDDemodulation, path, pixel, isPrimaryHit, sd, bsdfProperties, lobes, wasDeltaOnlyPathBeforeScattering, falcorPayload);
         }
 
         // Check if this is the last path vertex.
@@ -756,17 +752,10 @@ struct PathTracer
         {
             path.terminate();
         }
-
-
-
-        // TODO: jn
-        path.mip = 0;// geometryProps0.mip;
-        path.roughness = bsdf.data.roughness;
     }
 
-
     /** Handle the case when a scatter ray misses the scene.
-    \param[in,out] path The path state.
+        \param[in,out] path The path state.
     */
     void handleMiss(inout PathState path)
     {
@@ -861,7 +850,6 @@ struct PathTracer
 
         path.terminate();
     }
-
 
     /** Write path contribution to output buffer.
     */
@@ -1060,7 +1048,7 @@ struct PathTracer
             if (semiOpaque)
             {
                 const float3 emission = path.L;
-                const float3 reflectance = getMaterialReflectanceForDeltaPaths(materialType, hasDeltaLobes, sd, bsdfProperties);
+                const float3 reflectance = getMaterialReflectanceForDeltaPaths(hasDeltaLobes, sd, bsdfProperties, falcorPayload);
                 const float primaryHitDist = path.pdf;
                 const float hitDist = float(path.sceneLength) - primaryHitDist;
                 writeNRDDeltaReflectionGuideBuffers(outputNRD, kUseNRDDemodulation, pixel, reflectance, emission, sd.N, bsdfProperties.roughness, float(path.sceneLength), hitDist);
@@ -1072,15 +1060,12 @@ struct PathTracer
 #endif
     }
 
-
-
-#if 0
     /** Handle hit on delta transmission materials.
         After handling the hit, a new scatter (delta transmission only) ray is generated or the path is terminated.
         Executed only for guide paths.
         \param[in,out] path The path state.
     */
-    void handleDeltaTransmissionHit(inout PathState path)
+    void handleDeltaTransmissionHit(inout PathState path, const FalcorPayload falcorPayload)
     {
         // Upon hit:
         // - Load vertex/material data
@@ -1088,26 +1073,31 @@ struct PathTracer
         // - Sample scatter ray or terminate
 
         const bool isPrimaryHit = path.getVertexIndex() == 1;
-        const bool isTriangleHit = path.hit.getType() == HitType::Triangle;
+        //const bool isTriangleHit = path.hit.getType() == HitType::Triangle;
         const uint2 pixel = path.getPixel();
         const float3 viewDir = -path.dir;
 
-        let lod = createTextureSampler(path, isPrimaryHit, isTriangleHit);
+        // let lod = createTextureSampler(path, isPrimaryHit, isTriangleHit);
 
         // Load shading data. This is a long latency operation.
-        ShadingData sd = loadShadingData(path.hit, path.origin, path.dir, isPrimaryHit, lod);
+        // ShadingData sd = loadShadingData(path.hit, path.origin, path.dir, isPrimaryHit, lod);
+        ShadingData sd = loadShadingData(falcorPayload);
 
         // Reject false hits in nested dielectrics.
-        if (!handleNestedDielectrics(sd, path)) return;
+        //if (!handleNestedDielectrics(sd, path)) return;
 
         // Create BSDF instance and query its properties.
-        let bsdf = gScene.materials.getBSDF(sd, lod);
-        let bsdfProperties = bsdf.getProperties(sd);
+        //let bsdf = gScene.materials.getBSDF(sd, lod);
+        //let bsdfProperties = bsdf.getProperties(sd);
+        StandardBSDF bsdf = (StandardBSDF)0;
+        bsdf.data = LoadStanderdBSDFData(falcorPayload, sd);
+
+        BSDFProperties bsdfProperties = bsdf.getProperties(sd);
 
         const uint lobes = bsdf.getLobes(sd);
 
         // Terminate without the write-out if the path doesn't start as delta transmission.
-        const bool hasDeltaTransmissionLobe = ((lobes & (uint)LobeType::DeltaTransmission) != 0);
+        const bool hasDeltaTransmissionLobe = ((lobes & (uint)LobeType_DeltaTransmission) != 0);
         if (isPrimaryHit && !hasDeltaTransmissionLobe)
         {
             writeNRDDeltaTransmissionGuideBuffers(outputNRD, kUseNRDDemodulation, pixel, 0.f, 0.f, viewDir, 0.f, kNRDInvalidPathLength, 0.f);
@@ -1129,24 +1119,24 @@ struct PathTracer
 
         // Terminate the delta transmission path.
         const bool lastVertex = hasFinishedSurfaceBounces(path);
-        const bool hasNonDeltaLobes = (lobes & (uint)LobeType::NonDelta) != 0;
+        const bool hasNonDeltaLobes = (lobes & (uint)LobeType_NonDelta) != 0;
 
         // Fetch volume absorption from the material. This field only exist in basic materials for now.
         bool semiOpaque = false;
-        if (gScene.materials.isBasicMaterial(sd.materialID))
-        {
-            BasicMaterialData md = gScene.materials.getBasicMaterialData(sd.materialID);
+        //if (gScene.materials.isBasicMaterial(sd.materialID))
+        //{
+        //    BasicMaterialData md = gScene.materials.getBasicMaterialData(sd.materialID);
             // TODO: Expose this arbitrary value as a constant.
-            semiOpaque = any(md.volumeAbsorption > 100.f);
-        }
+         //   semiOpaque = any(md.volumeAbsorption > 100.f);
+       // }
 
-        const MaterialType materialType = sd.mtl.getMaterialType();
-        const bool hasDeltaLobes = (lobes & (uint)LobeType::Delta) != 0;
+        //const MaterialType materialType = sd.mtl.getMaterialType();
+        const bool hasDeltaLobes = (lobes & (uint)LobeType_Delta) != 0;
 
         if (lastVertex || semiOpaque)
         {
             float3 emission = path.L;
-            writeNRDDeltaTransmissionGuideBuffers(outputNRD, kUseNRDDemodulation, pixel, getMaterialReflectanceForDeltaPaths(materialType, hasDeltaLobes, sd, bsdfProperties), emission, sd.N, bsdfProperties.roughness, float(path.sceneLength), sd.posW);
+            writeNRDDeltaTransmissionGuideBuffers(outputNRD, kUseNRDDemodulation, pixel, getMaterialReflectanceForDeltaPaths(hasDeltaLobes, sd, bsdfProperties, falcorPayload), emission, sd.N, bsdfProperties.roughness, float(path.sceneLength), sd.posW);
 
             path.terminate();
             return;
@@ -1156,27 +1146,25 @@ struct PathTracer
         path.origin = sd.computeNewRayOrigin();
 
         // Set the active lobes only to delta transmission.
-        sd.mtl.setActiveLobes((uint)LobeType::DeltaTransmission);
+        sd.mtlActiveLobe = (uint)LobeType_DeltaTransmission;
 
         // Generate the next path segment or terminate.
-        bool valid = generateScatterRay(sd, bsdf, path);
+        bool valid = generateScatterRay(sd, bsdf, path, falcorPayload);
 
         // Delta transmission was not possible, fallback to delta reflection if it's allowed.
-        if (!valid && isDeltaReflectionAllowedAlongDeltaTransmissionPath(sd))
+        if (!valid && isDeltaReflectionAllowedAlongDeltaTransmissionPath(sd, falcorPayload))
         {
-            sd.mtl.setActiveLobes((uint)LobeType::DeltaTransmission | (uint)LobeType::DeltaReflection);
-            valid = generateScatterRay(sd, bsdf, path);
+            sd.mtlActiveLobe = (uint)LobeType_DeltaTransmission | (uint)LobeType_DeltaReflection;
+            valid = generateScatterRay(sd, bsdf, path, falcorPayload);
         }
 
         if (!valid)
         {
             float3 emission = path.L;
-            writeNRDDeltaTransmissionGuideBuffers(outputNRD, kUseNRDDemodulation, pixel, getMaterialReflectanceForDeltaPaths(materialType, hasDeltaLobes, sd, bsdfProperties), emission, sd.N, bsdfProperties.roughness, float(path.sceneLength), sd.posW);
+            writeNRDDeltaTransmissionGuideBuffers(outputNRD, kUseNRDDemodulation, pixel, getMaterialReflectanceForDeltaPaths(hasDeltaLobes, sd, bsdfProperties, falcorPayload), emission, sd.N, bsdfProperties.roughness, float(path.sceneLength), sd.posW);
 
             path.terminate();
             return;
         }
     }
-#endif
-
 };

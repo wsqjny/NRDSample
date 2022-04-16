@@ -45,7 +45,6 @@ static const uint kVertexIndexBitMask = (1u << kVertexIndexBitCount) - 1u;
 static const uint kPathFlagsBitCount = 32u - kVertexIndexBitCount;
 static const uint kPathFlagsBitMask = ((1u << kPathFlagsBitCount) - 1u) << kVertexIndexBitCount;
 
-
 /** Path flags. The path flags are currently stored in kPathFlagsBitCount bits.
 */
 static uint PathFlags_active = 0x0001;                      ///< Path is active/terminated.
@@ -75,16 +74,17 @@ static uint BounceType_Specular = 1;                        ///< Specular reflec
 static uint BounceType_Transmission = 2;                    ///< Transmission (all kinds).
 
 
-
-
+// TODO: Compact encoding to reduce live registers, e.g. packed HitInfo, packed normals.
+/** Live state for the path tracer.
+*/
 struct PathState
 {
     uint        id;                     ///< Path ID encodes (pixel, sampleIdx) with 12 bits each for pixel x|y and 8 bits for sample index.
 
     uint        flagsAndVertexIndex;    ///< Higher kPathFlagsBitCount bits: Flags indicating the current status. This can be multiple PathFlags flags OR'ed together.
                                         ///< Lower kVertexIndexBitCount bits: Current vertex index (0 = camera, 1 = primary hit, 2 = secondary hit, etc.).
-    //uint16_t    rejectedHits;           ///< Number of false intersections rejected along the path. This is used as a safeguard to avoid deadlock in pathological cases.
-    float       sceneLength;            ///< Path length in scene units (0.f at primary hit).
+    uint16_t    rejectedHits;           ///< Number of false intersections rejected along the path. This is used as a safeguard to avoid deadlock in pathological cases.
+    float16_t   sceneLength;            ///< Path length in scene units (0.f at primary hit).
     uint        bounceCounters;         ///< Packed counters for different types of bounces (see BounceType).
 
     // Scatter ray
@@ -101,13 +101,8 @@ struct PathState
     //InteriorList interiorList;          ///< Interior list. Keeping track of a stack of materials with medium properties.
     SampleGenerator sg;                 ///< Sample generator state. Typically 4-16B.
 
-    float       mip;                      ///< jn temp
-    float       roughness;                ///< jn temp 
-    float       outSceneLength;           ///< jn temp
-    bool        outIsDiffsue;             ///< jn temp
-
-
     // Accessors
+
     bool isTerminated() { return !isActive(); }
     bool isActive() { return hasFlag(PathFlags_active); }
     bool isHit() { return hasFlag(PathFlags_hit); }

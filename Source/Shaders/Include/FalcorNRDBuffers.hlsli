@@ -32,8 +32,8 @@ NRI_RESOURCE(RWTexture2D<float4>,   gOut_SampleEmission,                        
 NRI_RESOURCE(RWTexture2D<float4>,   gOut_SampleReflectance,                         u, 10, 1);
 
 // Primary
-NRI_RESOURCE(RWTexture2D<float4>,   gOut_primaryHitEmission,                        u, 11, 1);
-NRI_RESOURCE(RWTexture2D<float4>,   gOut_primaryHitDiffuseReflectance,              u, 12, 1);
+NRI_RESOURCE(RWTexture2D<float4>,   gOut_PrimaryHitEmission,                        u, 11, 1);
+NRI_RESOURCE(RWTexture2D<float4>,   gOut_PrimaryHitDiffuseReflectance,              u, 12, 1);
 NRI_RESOURCE(RWTexture2D<float4>,   gOut_PrimaryHitSpecularReflectance,             u, 13, 1);
 
 // DeltaReflection
@@ -48,4 +48,4 @@ NRI_RESOURCE(RWTexture2D<float4>,   gOut_DeltaTransmissionReflectance,          
 NRI_RESOURCE(RWTexture2D<float4>,   gOut_DeltaTransmissionEmission,                 u, 20, 1);
 NRI_RESOURCE(RWTexture2D<float4>,   gOut_DeltaTransmissionNormWRoughMaterialID,     u, 21, 1);
 NRI_RESOURCE(RWTexture2D<float>,    gOut_DeltaTransmissionPathLength,               u, 22, 1);
-NRI_RESOURCE(RWTexture2D<float>,    gOut_DeltaTransmissionHitDist,                  u, 23, 1);
+NRI_RESOURCE(RWTexture2D<float4>,   gOut_DeltaTransmissionPosW,                     u, 23, 1);

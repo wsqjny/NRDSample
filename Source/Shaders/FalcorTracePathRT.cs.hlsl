@@ -395,7 +395,6 @@ void main( uint2 pixelPos : SV_DispatchThreadId )
     uint sampleNum = gSampleNum << 1;
     uint checkerboard = STL::Sequence::CheckerBoard( pixelPos, gFrameIndex ) != 0;
     
-    float mip = 0.0;
     float hitT = 0.0;   
 
 
@@ -425,6 +424,10 @@ void main( uint2 pixelPos : SV_DispatchThreadId )
     gPathTracer.handleHit(path, primaryFalcorPayload, vq);
 #endif
 
+
+    float mip = gIn_PrimaryMip[pixelPos];
+    float roughness = primaryFalcorPayload.roughness;
+
     while (path.isActive())                                                          // handle path trace
     {
         // next hit
@@ -442,10 +445,11 @@ void main( uint2 pixelPos : SV_DispatchThreadId )
             //TraceRay(gScene.rtAccel, rayFlags, 0xff /* instanceInclusionMask */, kRayTypeScatter /* hitIdx */, rayTypeCount, kMissScatter /* missIdx */, ray.toRayDesc(), payload);
             //path = PathPayload::unpack(payload);
 
-            float2 mipAndCone = GetConeAngleFromRoughness(path.mip, path.roughness);         ///!!!TODO
+            float2 mipAndCone = GetConeAngleFromRoughness(mip, roughness);         ///!!!TODO
             GeometryProps geometryProps0 = CastRay(ray.Origin, ray.Direction, ray.TMin, ray.TMax, mipAndCone, gWorldTlas, GEOMETRY_IGNORE_TRANSPARENT, 0, 0);
             FalcorPayload falcorPayload = FillFalcorPayloadAfterTrace(geometryProps0);
-
+            mip = geometryProps0.mip;
+            roughness = falcorPayload.roughness;
 
             float hitT = geometryProps0.tmin;
 
@@ -466,7 +470,7 @@ void main( uint2 pixelPos : SV_DispatchThreadId )
             {              
                 // handle hit
 
-                path.sceneLength += (hitT);
+                path.sceneLength += float16_t(hitT);
 
                 //gPathTracer.setupPathLogging(path);
 #if defined(DELTA_REFLECTION_PASS)

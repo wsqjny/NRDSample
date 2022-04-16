@@ -88,14 +88,15 @@ void setNRDPrimaryHitEmission(NRDBuffers outputNRD, const bool useNRDDemodulatio
 {
     if (isPrimaryHit && path.getSampleIdx() == 0)
     {
+        // Generate primary hit guide buffers.
         if (useNRDDemodulation)
         {
-            gOut_primaryHitEmission[pixel] = float4(emission, 1.f);
+            gOut_PrimaryHitEmission[pixel] = float4(emission, 1.f);
         }
         else
         {
             // Clear buffers on primary hit only if demodulation is disabled.
-            gOut_primaryHitEmission[pixel] = 0.f;
+            gOut_PrimaryHitEmission[pixel] = 0.f;
         }
     }
 }
@@ -104,19 +105,22 @@ void setNRDPrimaryHitReflectance(NRDBuffers outputNRD, const bool useNRDDemodula
 {
     if (isPrimaryHit && path.getSampleIdx() == 0)
     {
+        // Generate primary hit guide buffers.
         if (useNRDDemodulation)
         {
-            gOut_primaryHitDiffuseReflectance[pixel] = float4(bsdfProperties.diffuseReflectionAlbedo, 1.f);
+            const float3 diffuseReflectance = max(kNRDMinReflectance, bsdfProperties.diffuseReflectionAlbedo);
+            gOut_PrimaryHitDiffuseReflectance[pixel] = float4(diffuseReflectance, 1.f);
 
             const float NdotV = saturate(dot(sd.N, sd.V));
             const float ggxAlpha = bsdfProperties.roughness * bsdfProperties.roughness;
-            const float3 specularReflectance = approxSpecularIntegralGGX(bsdfProperties.specularReflectionAlbedo, ggxAlpha, NdotV);
+            float3 specularReflectance = approxSpecularIntegralGGX(bsdfProperties.specularReflectionAlbedo, ggxAlpha, NdotV);
+            specularReflectance = max(kNRDMinReflectance, specularReflectance);
             gOut_PrimaryHitSpecularReflectance[pixel] = float4(specularReflectance, 1.f);
         }
         else
         {
             // Clear buffers on primary hit only if demodulation is disabled.
-            gOut_primaryHitDiffuseReflectance[pixel] = 1.f;
+            gOut_PrimaryHitDiffuseReflectance[pixel] = 1.f;
             gOut_PrimaryHitSpecularReflectance[pixel] = 1.f;
         }
     }
@@ -130,7 +134,7 @@ void setNRDSampleHitDist(NRDBuffers outputNRD, const PathState path, const uint2
     }
 }
 
-void setNRDSampleEmission(NRDBuffers outputNRD, const bool useNRDDemodulation, const PathState path, const uint2 outSampleIdx, const bool isPrimaryHit, const float3 emission)
+void setNRDSampleEmission(NRDBuffers outputNRD, const bool useNRDDemodulation, const PathState path, const uint2 outSampleIdx, const bool isPrimaryHit, const float3 emission, const bool wasDeltaOnlyPathBeforeScattering)
 {
     if (useNRDDemodulation)
     {
@@ -139,6 +143,17 @@ void setNRDSampleEmission(NRDBuffers outputNRD, const bool useNRDDemodulation, c
         {
             gOut_SampleEmission[outSampleIdx] = float4(emission, 1.f);
         }
+        // Additionally, accumulate emission along the delta path.
+        else if ((path.isDeltaReflectionPrimaryHit() || path.isDeltaTransmissionPath()) && any(emission > 0.f))
+        {
+            const bool demodulateDeltaReflectionEmission = path.isDeltaReflectionPrimaryHit() && wasDeltaOnlyPathBeforeScattering;
+            const bool demodulateDeltaTransmissionEmission = path.isDeltaTransmissionPath() && wasDeltaOnlyPathBeforeScattering;
+            if (demodulateDeltaReflectionEmission || demodulateDeltaTransmissionEmission)
+            {
+                float3 prevEmission = gOut_SampleEmission[outSampleIdx].rgb;
+                gOut_SampleEmission[outSampleIdx] = float4(prevEmission + emission, 1.f);
+            }
+        }
     }
     else if (isPrimaryHit)
     {
@@ -146,22 +161,28 @@ void setNRDSampleEmission(NRDBuffers outputNRD, const bool useNRDDemodulation, c
     }
 }
 
-void setNRDSampleReflectance(NRDBuffers outputNRD, const bool useNRDDemodulation, const PathState path, const uint2 outSampleIdx, const bool isPrimaryHit, const ShadingData sd, const BSDFProperties bsdfProperties)
+void setNRDSampleReflectance(NRDBuffers outputNRD, const bool useNRDDemodulation, const PathState path, const uint2 outSampleIdx, const bool isPrimaryHit, const ShadingData sd, const BSDFProperties bsdfProperties, const uint lobes, const bool wasDeltaOnlyPathBeforeScattering, const FalcorPayload falcorPayload)
 {
+    // Demodulate reflectance.
     if (useNRDDemodulation)
     {
+        const bool hasDeltaLobes = (lobes & (uint)LobeType_Delta) != 0;
+        const bool hasNonDeltaLobes = (lobes & (uint)LobeType_NonDelta) != 0;
+
         // Always demodulate reflectance from diffuse and specular paths on the primary hit (it seconds as a clear).
         if (isPrimaryHit)
         {
             if (path.isDiffusePrimaryHit())
             {
-                gOut_SampleReflectance[outSampleIdx] = float4(bsdfProperties.diffuseReflectionAlbedo, 1.f);
+                const float3 diffuseReflectance = max(kNRDMinReflectance, bsdfProperties.diffuseReflectionAlbedo);
+                gOut_SampleReflectance[outSampleIdx] = float4(diffuseReflectance, 1.f);
             }
             else if (path.isSpecularPrimaryHit())
             {
                 const float NdotV = saturate(dot(sd.N, sd.V));
                 const float ggxAlpha = bsdfProperties.roughness * bsdfProperties.roughness;
-                const float3 specularReflectance = approxSpecularIntegralGGX(bsdfProperties.specularReflectionAlbedo, ggxAlpha, NdotV);
+                float3 specularReflectance = approxSpecularIntegralGGX(bsdfProperties.specularReflectionAlbedo, ggxAlpha, NdotV);
+                specularReflectance = max(kNRDMinReflectance, specularReflectance);
                 gOut_SampleReflectance[outSampleIdx] = float4(specularReflectance, 1.f);
             }
             else
@@ -169,13 +190,30 @@ void setNRDSampleReflectance(NRDBuffers outputNRD, const bool useNRDDemodulation
                 gOut_SampleReflectance[outSampleIdx] = 1.f;
             }
         }
+        // Demodulate reflectance from the second vertex along delta reflection paths.
+        else if (path.isDeltaReflectionPrimaryHit() && wasDeltaOnlyPathBeforeScattering && hasNonDeltaLobes)
+        {
+            //const MaterialType materialType = sd.mtl.getMaterialType();
+            const bool hasDeltaLobes = (lobes & (uint)LobeType_Delta) != 0;
+            float3 deltaReflectance = getMaterialReflectanceForDeltaPaths(hasDeltaLobes, sd, bsdfProperties, falcorPayload);
+
+            gOut_SampleReflectance[outSampleIdx] = float4(deltaReflectance, 1.f);
+        }
+        // Demodulate reflectance from the first non-delta vertex along delta transmission paths.
+        else if (path.isDeltaTransmissionPath() && wasDeltaOnlyPathBeforeScattering && hasNonDeltaLobes)
+        {
+            //const MaterialType materialType = sd.mtl.getMaterialType();
+            const bool hasDeltaLobes = (lobes & (uint)LobeType_Delta) != 0;
+            float3 deltaReflectance = getMaterialReflectanceForDeltaPaths(hasDeltaLobes, sd, bsdfProperties, falcorPayload);
+
+            gOut_SampleReflectance[outSampleIdx] = float4(deltaReflectance, 1.f);
+        }
     }
     else if (isPrimaryHit)
     {
         gOut_SampleReflectance[outSampleIdx] = 1.f;
     }
 }
-
 
 /** Write out delta reflection guide buffers.
     Executed only for guide paths.
@@ -185,19 +223,18 @@ void writeNRDDeltaReflectionGuideBuffers(NRDBuffers outputNRD, const bool useNRD
     emission = useNRDDemodulation ? emission : 0.f;
     reflectance = useNRDDemodulation ? max(kNRDMinReflectance, reflectance) : 1.f;
 
-    // float2 octNormal = ndir_to_oct_unorm(normal);
+    float2 octNormal = ndir_to_oct_unorm(normal);
     // Clamp roughness so it's representable of what is actually used in the renderer.
     float clampedRoughness = roughness < 0.08f ? 0.00f : roughness;
     float materialID = 0.f;
 
     gOut_DeltaReflectionEmission[pixelPos] = float4(emission, 0.f);
     gOut_DeltaReflectionReflectance[pixelPos] = float4(reflectance, 0.f);
-    gOut_DeltaReflectionNormWRoughMaterialID[pixelPos] = float4(normal, clampedRoughness);// float4(octNormal, clampedRoughness, materialID);
+    gOut_DeltaReflectionNormWRoughMaterialID[pixelPos] = float4(octNormal, clampedRoughness, materialID);
     gOut_DeltaReflectionPathLength[pixelPos] = pathLength;
     gOut_DeltaReflectionHitDist[pixelPos] = hitDist;
 }
 
-#if 0
 /** Write out delta transmission guide buffers.
     Executed only for guide paths.
 */
@@ -211,16 +248,9 @@ void writeNRDDeltaTransmissionGuideBuffers(NRDBuffers outputNRD, const bool useN
     float clampedRoughness = roughness < 0.08f ? 0.00f : roughness;
     float materialID = 0.f;
 
-    outputNRD.deltaTransmissionEmission[pixelPos] = float4(emission, 0.f);
-    outputNRD.deltaTransmissionReflectance[pixelPos] = float4(reflectance, 0.f);
-    outputNRD.deltaTransmissionNormWRoughMaterialID[pixelPos] = float4(octNormal, clampedRoughness, materialID);
-    outputNRD.deltaTransmissionPathLength[pixelPos] = pathLength;
-    outputNRD.deltaTransmissionPosW[pixelPos] = float4(posW, 0.f);
+    gOut_DeltaTransmissionEmission[pixelPos] = float4(emission, 0.f);
+    gOut_DeltaTransmissionReflectance[pixelPos] = float4(reflectance, 0.f);
+    gOut_DeltaTransmissionNormWRoughMaterialID[pixelPos] = float4(octNormal, clampedRoughness, materialID);
+    gOut_DeltaTransmissionPathLength[pixelPos] = pathLength;
+    gOut_DeltaTransmissionPosW[pixelPos] = float4(posW, 0.f);
 }
-#endif
-
-
-
-
-
-

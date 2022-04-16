@@ -117,12 +117,10 @@ struct StandardBSDF : IBSDF
         return p;
     }
 
-
     uint getLobes(const ShadingData sd)
     {
         return FalcorBSDF::getLobes(data);
     }
-
 
 
     // Additional functions
