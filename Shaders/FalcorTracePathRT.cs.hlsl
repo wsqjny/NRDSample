@@ -476,7 +476,7 @@ void main( uint2 pixelPos : SV_DispatchThreadId )
 #if defined(DELTA_REFLECTION_PASS)
                 gPathTracer.handleDeltaReflectionHit(path, falcorPayload);
 #elif defined(DELTA_TRANSMISSION_PASS)
-                gPathTracer.handleDeltaTransmissionHit(path);
+                gPathTracer.handleDeltaTransmissionHit(path, falcorPayload);
 #else
                 //VisibilityQuery vq;
                 gPathTracer.handleHit(path, falcorPayload, vq);

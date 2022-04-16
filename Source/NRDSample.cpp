@@ -132,13 +132,15 @@ enum class Texture : uint32_t
     Tex_FPT_DeltaReflectionNormWRoughMaterialID,
     Tex_FPT_DeltaReflectionPathLength,
     Tex_FPT_DeltaReflectionHitDist,
+    Tex_FPT_DeltaReflectionMotionVector,
 
     Tex_FPT_DeltaTransmissionRadianceHitDist,
     Tex_FPT_DeltaTransmissionReflectance,
     Tex_FPT_DeltaTransmissionEmission,
     Tex_FPT_DeltaTransmissionNormWRoughMaterialID,
     Tex_FPT_DeltaTransmissionPathLength,
-    Tex_FPT_DeltaTransmissionHitDist,
+    Tex_FPT_DeltaTransmissionPosW,
+    Tex_FPT_DeltaTransmissionMotionVector,
 
     // Read-only
     NisData1,
@@ -251,14 +253,15 @@ enum class Descriptor : uint32_t
     FALCOR_TEX_DESCRIPTOR(DeltaReflectionNormWRoughMaterialID)
     FALCOR_TEX_DESCRIPTOR(DeltaReflectionPathLength)
     FALCOR_TEX_DESCRIPTOR(DeltaReflectionHitDist)
+    FALCOR_TEX_DESCRIPTOR(DeltaReflectionMotionVector)
 
     FALCOR_TEX_DESCRIPTOR(DeltaTransmissionRadianceHitDist)
     FALCOR_TEX_DESCRIPTOR(DeltaTransmissionReflectance)
     FALCOR_TEX_DESCRIPTOR(DeltaTransmissionEmission)
     FALCOR_TEX_DESCRIPTOR(DeltaTransmissionNormWRoughMaterialID)
     FALCOR_TEX_DESCRIPTOR(DeltaTransmissionPathLength)
-    FALCOR_TEX_DESCRIPTOR(DeltaTransmissionHitDist)
-
+    FALCOR_TEX_DESCRIPTOR(DeltaTransmissionPosW)
+    FALCOR_TEX_DESCRIPTOR(DeltaTransmissionMotionVector)
 
     // Read-only
     NisData1,
@@ -2003,13 +2006,15 @@ void Sample::CreateResources(nri::Format swapChainFormat)
     CreateTexture(descriptorDescs, "Texture::FPT_DeltaReflectionNormWRoughMaterialID",  nri::Format::R10_G10_B10_A2_UNORM, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
     CreateTexture(descriptorDescs, "Texture::FPT_DeltaReflectionPathLength",            nri::Format::R16_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
     CreateTexture(descriptorDescs, "Texture::FPT_DeltaReflectionHitDist",               nri::Format::R16_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_DeltaReflectionMotionVector",          nri::Format::RG16_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
 
     CreateTexture(descriptorDescs, "Texture::FPT_DeltaTransmissionRadianceHitDist",     nri::Format::RGBA32_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
     CreateTexture(descriptorDescs, "Texture::FPT_DeltaTransmissionReflectance",         nri::Format::RGBA16_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
     CreateTexture(descriptorDescs, "Texture::FPT_DeltaTransmissionEmission",            nri::Format::RGBA32_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
     CreateTexture(descriptorDescs, "Texture::FPT_DeltaTransmissionNormWRoughMaterialID",nri::Format::R10_G10_B10_A2_UNORM, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
     CreateTexture(descriptorDescs, "Texture::FPT_DeltaTransmissionPathLength",          nri::Format::R16_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
-    CreateTexture(descriptorDescs, "Texture::FPT_DeltaTransmissionHitDist",             nri::Format::R16_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_DeltaTransmissionPosW",                nri::Format::RGBA32_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_DeltaTransmissionMotionVector",        nri::Format::RG16_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
     ///-------------------------------------------------------------------------------------------------------------------------------------------------------------
 
     // Read-only
@@ -2304,7 +2309,7 @@ void Sample::CreatePipelines()
 
         nri::ComputePipelineDesc pipelineDesc = {};
         pipelineDesc.pipelineLayout = pipelineLayout;
-        pipelineDesc.computeShader = utils::LoadShader(m_DeviceDesc->graphicsAPI, "FalcorTracePathRT.cs", shaderCodeStorage);
+        pipelineDesc.computeShader = utils::LoadShader(m_DeviceDesc->graphicsAPI, "FalcorTracePathRT_DeltaReflection.cs", shaderCodeStorage);
 
         NRI_ABORT_ON_FAILURE(NRI.CreateComputePipeline(*m_Device, pipelineDesc, pipeline));
         m_Pipelines.push_back(pipeline);
@@ -2334,7 +2339,7 @@ void Sample::CreatePipelines()
 
         nri::ComputePipelineDesc pipelineDesc = {};
         pipelineDesc.pipelineLayout = pipelineLayout;
-        pipelineDesc.computeShader = utils::LoadShader(m_DeviceDesc->graphicsAPI, "FalcorTracePathRT.cs", shaderCodeStorage);
+        pipelineDesc.computeShader = utils::LoadShader(m_DeviceDesc->graphicsAPI, "FalcorTracePathRT_DeltaTransmission.cs", shaderCodeStorage);
 
         NRI_ABORT_ON_FAILURE(NRI.CreateComputePipeline(*m_Device, pipelineDesc, pipeline));
         m_Pipelines.push_back(pipeline);
@@ -2765,7 +2770,7 @@ void Sample::CreateDescriptorSets()
             Get(Descriptor::Desc_FPT_DeltaTransmissionEmission_StorageTexture),
             Get(Descriptor::Desc_FPT_DeltaTransmissionNormWRoughMaterialID_StorageTexture),
             Get(Descriptor::Desc_FPT_DeltaTransmissionPathLength_StorageTexture),
-            Get(Descriptor::Desc_FPT_DeltaTransmissionHitDist_StorageTexture),
+            Get(Descriptor::Desc_FPT_DeltaTransmissionPosW_StorageTexture),
         };
 
         const nri::DescriptorRangeUpdateDesc descriptorRangeUpdateDesc[] =
@@ -2839,9 +2844,9 @@ void Sample::CreateDescriptorSets()
         {
             Get(Descriptor::Desc_FPT_PrimaryHitEmission_Texture),
             Get(Descriptor::Desc_FPT_PrimaryHitDiffuseReflectance_Texture),
-            Get(Descriptor::Diff_Texture),
+            Get(Descriptor::Desc_FPT_SampleDiffuseRadianceHitDist_Texture),
             Get(Descriptor::Desc_FPT_PrimaryHitSpecularReflectance_Texture),
-            Get(Descriptor::Spec_Texture),
+            Get(Descriptor::Desc_FPT_SampleSpecularRadianceHitDist_Texture),
             Get(Descriptor::Desc_FPT_DeltaReflectionEmission_Texture),
             Get(Descriptor::Desc_FPT_DeltaReflectionReflectance_Texture),
             Get(Descriptor::Desc_FPT_DeltaReflectionRadianceHitDist_Texture),
@@ -4424,45 +4429,7 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
     commonSettings.accumulationMode = resetHistoryFactor == 0.0f ? nrd::AccumulationMode::CLEAR_AND_RESTART : nrd::AccumulationMode::CONTINUE;
     commonSettings.isMotionVectorInWorldSpace = m_Settings.isMotionVectorInWorldSpace;
 
-    // NRD user pool
-    NrdUserPool userPool = {};
-    {
-        // Common
-        NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_MV, { &GetState(Texture::Motion), GetFormat(Texture::Motion) });
-        NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_NORMAL_ROUGHNESS, { &GetState(Texture::Normal_Roughness), GetFormat(Texture::Normal_Roughness) });
-        NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_VIEWZ, { &GetState(Texture::ViewZ), GetFormat(Texture::ViewZ) });
 
-        // Diffuse
-        NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST, { &GetState(Texture::Tex_FPT_SampleDiffuseRadianceHitDist), GetFormat(Texture::Tex_FPT_SampleDiffuseRadianceHitDist) });
-        NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_DIFF_DIRECTION_PDF, { &GetState(Texture::DiffDirectionPdf), GetFormat(Texture::DiffDirectionPdf) });
-        NrdIntegration_SetResource(userPool, nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST, { &GetState(Texture::Diff), GetFormat(Texture::Diff) });
-
-        // Diffuse occlusion (if NRD_OCCLUSION_ONLY enabled)
-        NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_DIFF_HITDIST, { &GetState(Texture::Unfiltered_Diff), GetFormat(Texture::Unfiltered_Diff) });
-        NrdIntegration_SetResource(userPool, nrd::ResourceType::OUT_DIFF_HITDIST, { &GetState(Texture::Diff), GetFormat(Texture::Diff) });
-
-        // Diffuse - not used, needed only for DIFFUSE_DIRECTIONAL_OCCLUSION denoiser validation
-        NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_DIFF_DIRECTION_HITDIST, { &GetState(Texture::Unfiltered_Diff), GetFormat(Texture::Unfiltered_Diff) });
-        NrdIntegration_SetResource(userPool, nrd::ResourceType::OUT_DIFF_DIRECTION_HITDIST, { &GetState(Texture::Diff), GetFormat(Texture::Diff) });
-
-        // Specular
-        NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_SPEC_RADIANCE_HITDIST, { &GetState(Texture::Tex_FPT_SampleSpecularRadianceHitDist), GetFormat(Texture::Tex_FPT_SampleSpecularRadianceHitDist) });
-        NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_SPEC_DIRECTION_PDF, { &GetState(Texture::SpecDirectionPdf), GetFormat(Texture::SpecDirectionPdf) });
-        NrdIntegration_SetResource(userPool, nrd::ResourceType::OUT_SPEC_RADIANCE_HITDIST, { &GetState(Texture::Spec), GetFormat(Texture::Spec) });
-
-        // Specular occlusion (if NRD_OCCLUSION_ONLY enabled)
-        NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_SPEC_HITDIST, { &GetState(Texture::Unfiltered_Spec), GetFormat(Texture::Unfiltered_Spec) }); // for NRD_OCCLUSION_ONLY
-        NrdIntegration_SetResource(userPool, nrd::ResourceType::OUT_SPEC_HITDIST, { &GetState(Texture::Spec), GetFormat(Texture::Spec) });
-
-        // SIGMA
-        NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_SHADOWDATA, { &GetState(Texture::Unfiltered_ShadowData), GetFormat(Texture::Unfiltered_ShadowData) });
-        NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_SHADOW_TRANSLUCENCY, { &GetState(Texture::Unfiltered_Shadow_Translucency), GetFormat(Texture::Unfiltered_Shadow_Translucency) });
-        NrdIntegration_SetResource(userPool, nrd::ResourceType::OUT_SHADOW_TRANSLUCENCY, { &GetState(Texture::Shadow), GetFormat(Texture::Shadow) });
-
-        // REFERENCE
-        NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_RADIANCE, { &GetState(Texture::ComposedLighting_ViewZ), GetFormat(Texture::ComposedLighting_ViewZ) });
-        NrdIntegration_SetResource(userPool, nrd::ResourceType::OUT_RADIANCE, { &GetState(Texture::ComposedLighting_ViewZ), GetFormat(Texture::ComposedLighting_ViewZ) });
-    }
 
     UpdateConstantBuffer(frameIndex, resetHistoryFactor);
 
@@ -4554,26 +4521,6 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
 
     NRI.BeginCommandBuffer(commandBuffer, m_DescriptorPool, 0);
     {
-        // Preintegrate F (for specular) and G (for diffuse) terms (only once)
-        if (frameIndex == 0)
-        {
-            NRI.CmdSetPipelineLayout(commandBuffer, *GetPipelineLayout(Pipeline::IntegrateBRDF));
-            NRI.CmdSetPipeline(commandBuffer, *Get(Pipeline::IntegrateBRDF));
-            NRI.CmdSetDescriptorSets(commandBuffer, 0, 1, &Get(DescriptorSet::IntegrateBRDF0), nullptr);
-
-            const uint32_t gridWidth = (FG_TEX_SIZE + 15) / 16;
-            const uint32_t gridHeight = (FG_TEX_SIZE + 15) / 16;
-            NRI.CmdDispatch(commandBuffer, gridWidth, gridHeight, 1);
-
-            const nri::TextureTransitionBarrierDesc transitions[] =
-            {
-                nri::TextureTransition(GetState(Texture::IntegrateBRDF), nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE),
-            };
-            transitionBarriers.textures = transitions;
-            transitionBarriers.textureNum = helper::GetCountOf(transitions);
-            NRI.CmdPipelineBarrier(commandBuffer, &transitionBarriers, nullptr, nri::BarrierDependency::ALL_STAGES);
-        }
-
         { // TLAS
             helper::Annotation annotation(NRI, commandBuffer, "TLAS");
 
@@ -4641,42 +4588,6 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
             NRI.CmdDispatch(commandBuffer, rectGridW, rectGridH, 1);
         }
 
-        { // Shadow denoising
-            helper::Annotation annotation(NRI, commandBuffer, "Shadow denoising");
-
-            nrd::SigmaSettings shadowSettings = {};
-
-            m_Sigma.SetMethodSettings(nrd::Method::SIGMA_SHADOW_TRANSLUCENCY, &shadowSettings);
-            m_Sigma.Denoise(frameIndex, commandBuffer, commonSettings, userPool);
-
-            // NRD integration layer binds its own descriptor pool, we need to re-bind ours back
-            NRI.CmdSetDescriptorPool(commandBuffer, *m_DescriptorPool);
-        }
-
-        { // Direct lighting
-            helper::Annotation annotation(NRI, commandBuffer, "Direct lighting");
-
-            const TextureState transitions[] =
-            {
-                // Input
-                {Texture::DirectEmission, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
-                {Texture::Shadow, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
-                {Texture::TransparentLighting, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
-                // Output
-                {Texture::DirectLighting, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
-            };
-            transitionBarriers.textures = optimizedTransitions.data();
-            transitionBarriers.textureNum = BuildOptimizedTransitions(transitions, helper::GetCountOf(transitions), optimizedTransitions.data(), helper::GetCountOf(optimizedTransitions));
-            NRI.CmdPipelineBarrier(commandBuffer, &transitionBarriers, nullptr, nri::BarrierDependency::ALL_STAGES);
-
-            NRI.CmdSetPipelineLayout(commandBuffer, *GetPipelineLayout(Pipeline::DirectLighting));
-            NRI.CmdSetPipeline(commandBuffer, *Get(Pipeline::DirectLighting));
-
-            const nri::DescriptorSet* descriptorSets[] = { frame.globalConstantBufferDescriptorSet, Get(DescriptorSet::DirectLighting1) };
-            NRI.CmdSetDescriptorSets(commandBuffer, 0, helper::GetCountOf(descriptorSets), descriptorSets, nullptr);
-
-            NRI.CmdDispatch(commandBuffer, rectGridW, rectGridH, 1);
-        }
 
         { // FaclorPT : TracePass
             helper::Annotation annotation(NRI, commandBuffer, "FALCOR:TracePas");
@@ -4712,7 +4623,7 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
                 {Texture::Tex_FPT_DeltaTransmissionEmission, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
                 {Texture::Tex_FPT_DeltaTransmissionNormWRoughMaterialID, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
                 {Texture::Tex_FPT_DeltaTransmissionPathLength, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
-                {Texture::Tex_FPT_DeltaTransmissionHitDist, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+                {Texture::Tex_FPT_DeltaTransmissionPosW, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
             };
             transitionBarriers.textures = optimizedTransitions.data();
             transitionBarriers.textureNum = BuildOptimizedTransitions(transitions, helper::GetCountOf(transitions), optimizedTransitions.data(), helper::GetCountOf(optimizedTransitions));
@@ -4720,6 +4631,40 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
 
             NRI.CmdSetPipelineLayout(commandBuffer, *GetPipelineLayout(Pipeline::FalcorPT_TracePass));
             NRI.CmdSetPipeline(commandBuffer, *Get(Pipeline::FalcorPT_TracePass));
+
+            const nri::DescriptorSet* descriptorSets[] = { frame.globalConstantBufferDescriptorSet, Get(DescriptorSet::FalcorPathTracer), Get(DescriptorSet::RayTracing2) };
+            NRI.CmdSetDescriptorSets(commandBuffer, 0, helper::GetCountOf(descriptorSets), descriptorSets, nullptr);
+
+            uint32_t rectWmod = uint32_t(m_ScreenResolution.x * resolutionScaleQuarter + 0.5f);
+            uint32_t rectHmod = uint32_t(m_ScreenResolution.y * resolutionScaleQuarter + 0.5f);
+            uint32_t rectGridWmod = (rectWmod + 15) / 16;
+            uint32_t rectGridHmod = (rectHmod + 15) / 16;
+
+            NRI.CmdDispatch(commandBuffer, rectGridWmod, rectGridHmod, 1);
+        }
+
+        { // FaclorPT : TracePass : Delta Reflection
+            helper::Annotation annotation(NRI, commandBuffer, "FALCOR:TracePas : Delta Reflection");                    
+
+            NRI.CmdSetPipelineLayout(commandBuffer, *GetPipelineLayout(Pipeline::FalcorPT_TraceDeltaReflectionPass));
+            NRI.CmdSetPipeline(commandBuffer, *Get(Pipeline::FalcorPT_TraceDeltaReflectionPass));
+
+            const nri::DescriptorSet* descriptorSets[] = { frame.globalConstantBufferDescriptorSet, Get(DescriptorSet::FalcorPathTracer), Get(DescriptorSet::RayTracing2) };
+            NRI.CmdSetDescriptorSets(commandBuffer, 0, helper::GetCountOf(descriptorSets), descriptorSets, nullptr);
+
+            uint32_t rectWmod = uint32_t(m_ScreenResolution.x * resolutionScaleQuarter + 0.5f);
+            uint32_t rectHmod = uint32_t(m_ScreenResolution.y * resolutionScaleQuarter + 0.5f);
+            uint32_t rectGridWmod = (rectWmod + 15) / 16;
+            uint32_t rectGridHmod = (rectHmod + 15) / 16;
+
+            NRI.CmdDispatch(commandBuffer, rectGridWmod, rectGridHmod, 1);
+        }
+
+        { // FaclorPT : TracePass : Delta Transmission
+            helper::Annotation annotation(NRI, commandBuffer, "FALCOR:TracePas : Delta Transmission");
+
+            NRI.CmdSetPipelineLayout(commandBuffer, *GetPipelineLayout(Pipeline::FalcorPT_TraceDeltaTransmissionPass));
+            NRI.CmdSetPipeline(commandBuffer, *Get(Pipeline::FalcorPT_TraceDeltaTransmissionPass));
 
             const nri::DescriptorSet* descriptorSets[] = { frame.globalConstantBufferDescriptorSet, Get(DescriptorSet::FalcorPathTracer), Get(DescriptorSet::RayTracing2) };
             NRI.CmdSetDescriptorSets(commandBuffer, 0, helper::GetCountOf(descriptorSets), descriptorSets, nullptr);
@@ -4765,7 +4710,8 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
         }
 
 
-        { // Falcor NRDPack Radiance
+#if 0
+        { // Falcor NRDPack Radiance For Diffuse Specular
             helper::Annotation annotation(NRI, commandBuffer, "FalcorNRD PackRadiance");
 
             const TextureState transitions[] =
@@ -4791,43 +4737,37 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
 
             NRI.CmdDispatch(commandBuffer, rectGridW, rectGridH, 1);
         }
+#endif
 
-        { // Diffuse & specular indirect lighting denoising
+        { // Diffuse & specular indirect lighting denoising : NRD DiffuseSpecular
+
+            // NRD user pool
+            NrdUserPool userPool = {};
+            {
+                // Common
+                NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_MV, { &GetState(Texture::Motion), GetFormat(Texture::Motion) });
+                NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_NORMAL_ROUGHNESS, { &GetState(Texture::Normal_Roughness), GetFormat(Texture::Normal_Roughness) });
+                NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_VIEWZ, { &GetState(Texture::ViewZ), GetFormat(Texture::ViewZ) });
+
+                // Diffuse
+                NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST, { &GetState(Texture::Tex_FPT_SampleDiffuseRadianceHitDist), GetFormat(Texture::Tex_FPT_SampleDiffuseRadianceHitDist) });
+                NrdIntegration_SetResource(userPool, nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST, { &GetState(Texture::Tex_FPT_SampleDiffuseRadianceHitDist), GetFormat(Texture::Tex_FPT_SampleDiffuseRadianceHitDist) });
+
+                // Specular
+                NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_SPEC_RADIANCE_HITDIST, { &GetState(Texture::Tex_FPT_SampleSpecularRadianceHitDist), GetFormat(Texture::Tex_FPT_SampleSpecularRadianceHitDist) });
+                NrdIntegration_SetResource(userPool, nrd::ResourceType::OUT_SPEC_RADIANCE_HITDIST, { &GetState(Texture::Tex_FPT_SampleSpecularRadianceHitDist), GetFormat(Texture::Tex_FPT_SampleSpecularRadianceHitDist) });
+            }
+
             helper::Annotation annotation(NRI, commandBuffer, "Indirect lighting denoising");
 
             if (m_Settings.denoiser == REBLUR)
-            {           
-
-#if( NRD_OCCLUSION_ONLY == 0 )
-#if( NRD_COMBINED == 1 )
+            {       
                 m_Reblur.SetMethodSettings(nrd::Method::REBLUR_DIFFUSE_SPECULAR, &m_ReblurSettings);
-#else
-                m_Reblur.SetMethodSettings(nrd::Method::REBLUR_DIFFUSE, &m_ReblurSettings);
-                m_Reblur.SetMethodSettings(nrd::Method::REBLUR_SPECULAR, &m_ReblurSettings);
-#endif
-#else
-#if( NRD_COMBINED == 1 )
-                m_Reblur.SetMethodSettings(nrd::Method::REBLUR_DIFFUSE_SPECULAR_OCCLUSION, &m_ReblurSettings);
-#else
-                m_Reblur.SetMethodSettings(nrd::Method::REBLUR_DIFFUSE_OCCLUSION, &m_ReblurSettings);
-                m_Reblur.SetMethodSettings(nrd::Method::REBLUR_SPECULAR_OCCLUSION, &m_ReblurSettings);
-#endif
-#endif
-
                 m_Reblur.Denoise(frameIndex, commandBuffer, commonSettings, userPool);
             }
             else if (m_Settings.denoiser == RELAX)
             {
-               
-
-#if( NRD_COMBINED == 1 )
                 m_Relax.SetMethodSettings(nrd::Method::RELAX_DIFFUSE_SPECULAR, &m_RelaxSettings);
-#else
-
-                m_Relax.SetMethodSettings(nrd::Method::RELAX_DIFFUSE, &m_RelaxDiffuseSetting);
-                m_Relax.SetMethodSettings(nrd::Method::RELAX_SPECULAR, &m_RelaxSpecularSetting);
-#endif
-
                 m_Relax.Denoise(frameIndex, commandBuffer, commonSettings, userPool);
             }
 
@@ -4835,6 +4775,93 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
             NRI.CmdSetDescriptorPool(commandBuffer, *m_DescriptorPool);
         }
 
+#if 0
+        // NRD Delta Reflection
+        if (0)
+        {
+            // Step1: Motion Vector.
+            {
+                static bool bEnableDeltaReflectionMV = false;
+                static bool bDRMV_WorldSpaceMotion = false;
+                if (bEnableDeltaReflectionMV)
+                {
+                    // NRD user pool
+                    NrdUserPool userPool = {};
+                    {
+                        // Common
+                        NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_MV, { &GetState(Texture::Motion), GetFormat(Texture::Motion) });
+                        NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_NORMAL_ROUGHNESS, { &GetState(Texture::Normal_Roughness), GetFormat(Texture::Normal_Roughness) });
+                        NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_VIEWZ, { &GetState(Texture::ViewZ), GetFormat(Texture::ViewZ) });                        
+
+                        // Specular
+                        NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_SPEC_HITDIST, { &GetState(Texture::Tex_FPT_SampleSpecularRadianceHitDist), GetFormat(Texture::Tex_FPT_SampleSpecularRadianceHitDist) });
+                        NrdIntegration_SetResource(userPool, nrd::ResourceType::OUT_REFLECTION_MV, { &GetState(Texture::Tex_FPT_SampleSpecularRadianceHitDist), GetFormat(Texture::Tex_FPT_SampleSpecularRadianceHitDist) });
+                    }
+
+                    helper::Annotation annotation(NRI, commandBuffer, "Specular Reflection MV");
+
+                    nrd::SpecularReflectionMvSettings specularReflectionMvSettings;
+                    m_ReflectionMV.SetMethodSettings(nrd::Method::SPECULAR_REFLECTION_MV, static_cast<void*>(&specularReflectionMvSettings));
+                    m_ReflectionMV.Denoise(frameIndex, commandBuffer, commonSettings, userPool);
+
+                    // NRD integration layer binds its own descriptor pool, we need to re-bind ours back
+                    NRI.CmdSetDescriptorPool(commandBuffer, *m_DescriptorPool);
+                }
+                else
+                {
+                    if (bDRMV_WorldSpaceMotion)
+                    {
+                        // clear to 0.0f;
+                    }
+                    else
+                    {
+                        // copy from input.
+                        const nri::TextureTransitionBarrierDesc copyTransitions[] =
+                        {
+                            nri::TextureTransition(Get(Texture::Tex_FPT_DeltaReflectionMotionVector), nri::AccessBits::UNKNOWN, nri::AccessBits::COPY_DESTINATION, nri::TextureLayout::UNKNOWN, nri::TextureLayout::GENERAL),
+                        };
+                        transitionBarriers.textures = copyTransitions;
+                        transitionBarriers.textureNum = helper::GetCountOf(copyTransitions);
+                        NRI.CmdPipelineBarrier(commandBuffer, &transitionBarriers, nullptr, nri::BarrierDependency::ALL_STAGES);
+
+                        NRI.CmdCopyTexture(commandBuffer, *Get(Texture::Tex_FPT_DeltaReflectionMotionVector), 0, nullptr, *Get(Texture::Motion), 0, nullptr);
+                    }
+                }
+            }
+
+            // Step2: PackRadiance
+            {
+
+            }
+
+            // Step3: Denoise
+            {
+
+                NrdUserPool userPool = {};
+                {
+                    // Common
+                    NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_MV, { &GetState(Texture::Motion), GetFormat(Texture::Motion) });
+                    NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_NORMAL_ROUGHNESS, { &GetState(Texture::Normal_Roughness), GetFormat(Texture::Normal_Roughness) });
+                    NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_VIEWZ, { &GetState(Texture::ViewZ), GetFormat(Texture::ViewZ) });
+
+                    // Diffuse
+                    NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST, { &GetState(Texture::Tex_FPT_SampleDiffuseRadianceHitDist), GetFormat(Texture::Tex_FPT_SampleDiffuseRadianceHitDist) });
+                    NrdIntegration_SetResource(userPool, nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST, { &GetState(Texture::Diff), GetFormat(Texture::Diff) });
+                }
+
+                helper::Annotation annotation(NRI, commandBuffer, "Indirect lighting denoising");
+
+                // Relax diffuse method.
+                {
+                    m_Relax.SetMethodSettings(nrd::Method::RELAX_DIFFUSE, &m_RelaxSettings);
+                    m_Relax.Denoise(frameIndex, commandBuffer, commonSettings, userPool);
+                }
+
+                // NRD integration layer binds its own descriptor pool, we need to re-bind ours back
+                NRI.CmdSetDescriptorPool(commandBuffer, *m_DescriptorPool);
+            }
+        }
+#endif
         { // Composition
             helper::Annotation annotation(NRI, commandBuffer, "Composition");
 
@@ -4843,9 +4870,9 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
                 // Input
                 {Texture::Tex_FPT_primaryHitEmission, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
                 {Texture::Tex_FPT_primaryHitDiffuseReflectance, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
-                {Texture::Diff, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
+                {Texture::Tex_FPT_SampleDiffuseRadianceHitDist, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
                 {Texture::Tex_FPT_PrimaryHitSpecularReflectance, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
-                {Texture::Spec, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
+                {Texture::Tex_FPT_SampleSpecularRadianceHitDist, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
             
                 {Texture::Tex_FPT_DeltaReflectionEmission, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
                 {Texture::Tex_FPT_DeltaReflectionReflectance, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
@@ -4871,6 +4898,7 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
             NRI.CmdDispatch(commandBuffer, rectGridW, rectGridH, 1);
         }
 
+#if 0
         if (m_Settings.reference)
         { // Reference
             helper::Annotation annotation(NRI, commandBuffer, "Reference denoising");
@@ -4885,7 +4913,7 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
             // NRD integration layer binds its own descriptor pool, we need to re-bind ours back
             NRI.CmdSetDescriptorPool(commandBuffer, *m_DescriptorPool);
         }
-
+#endif
         if (m_IsDlssEnabled)
         {
             { // Pre

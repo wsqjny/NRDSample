@@ -24,6 +24,78 @@ NRI_RESOURCE(RWTexture2D<float4>, outputNRDDeltaTransmissionRadianceHitDist,u, 7
 
 
 
+//--------------------------------------------------------------------------- Pack Radiance Begin----------------------------------------------------------
+// TODO: Falcor move this to a saperate pass.
+inline float luminance(float3 rgb)
+{
+    return dot(rgb, float3(0.2126f, 0.7152f, 0.0722f));
+}
+
+void clampRadiance(inout float3 diffuseRadiance, inout float3 specularRadiance)
+{
+    static const float kEpsilon = 1e-6f;
+    static const float gMaxIntensity = 1000.f;
+
+    float lDiff = luminance(diffuseRadiance);
+    if (lDiff > kEpsilon)
+    {
+        diffuseRadiance *= min(gMaxIntensity / lDiff, 1.f);
+    }
+
+    float lSpec = luminance(specularRadiance);
+    if (lSpec > kEpsilon)
+    {
+        specularRadiance *= min(gMaxIntensity / lSpec, 1.f);
+    }
+}
+
+void PackRadiance(uint2 pixel)
+{
+    float4 diffuseRadianceHitDist               = outputNRDDiffuseRadianceHitDist[pixel];
+    float4 specularRadianceHitDist              = outputNRDSpecularRadianceHitDist[pixel];
+    float4 deltaReflectionRadianceHitDist       = outputNRDDeltaReflectionRadianceHitDist[pixel];
+    float4 deltaTransmissionRadianceHitDist     = outputNRDDeltaTransmissionRadianceHitDist[pixel];
+    
+    clampRadiance(diffuseRadianceHitDist.rgb, specularRadianceHitDist.rgb);
+    clampRadiance(deltaReflectionRadianceHitDist.rgb, deltaTransmissionRadianceHitDist.rgb);
+
+    // Diffuse/Specular maybe REBLUR or RELAX. only for relax now.    
+    if (gDenoiserType != REBLUR)    // RELAX
+    {
+        diffuseRadianceHitDist = RELAX_FrontEnd_PackRadianceAndHitDist(diffuseRadianceHitDist.rgb, diffuseRadianceHitDist.a);
+        specularRadianceHitDist = RELAX_FrontEnd_PackRadianceAndHitDist(specularRadianceHitDist.rgb, specularRadianceHitDist.a);
+
+        outputNRDDiffuseRadianceHitDist[pixel] = diffuseRadianceHitDist;
+        outputNRDSpecularRadianceHitDist[pixel] = specularRadianceHitDist;
+    }
+    else
+    {
+#if 0
+        float viewZ = gViewZ[ipos];
+        float linearRoughness = gNormalRoughness[ipos].z;
+
+        diffuseRadianceHitDist.a = REBLUR_FrontEnd_GetNormHitDist(diffuseRadianceHitDist.a, viewZ, gHitDistParams, linearRoughness);
+        REBLUR_FrontEnd_PackRadianceAndHitDist(diffuseRadianceHitDist.rgb, diffuseRadianceHitDist.a);
+
+        specularRadianceHitDist.a = REBLUR_FrontEnd_GetNormHitDist(specularRadianceHitDist.a, viewZ, gHitDistParams, linearRoughness);
+        REBLUR_FrontEnd_PackRadianceAndHitDist(specularRadianceHitDist.rgb, specularRadianceHitDist.a);
+#endif
+    }
+
+    // Delta Reflection/Transmission is RELAX_DIFFUSE
+    {
+        deltaReflectionRadianceHitDist = RELAX_FrontEnd_PackRadianceAndHitDist(deltaReflectionRadianceHitDist.rgb, deltaReflectionRadianceHitDist.a);
+        deltaTransmissionRadianceHitDist = RELAX_FrontEnd_PackRadianceAndHitDist(deltaTransmissionRadianceHitDist.rgb, deltaTransmissionRadianceHitDist.a);
+
+        outputNRDDeltaReflectionRadianceHitDist[pixel] = deltaReflectionRadianceHitDist;
+        outputNRDDeltaTransmissionRadianceHitDist[pixel]= deltaTransmissionRadianceHitDist;
+    }   
+}
+//--------------------------------------------------------------------------- Pack Radiance End--------------------------------------------------------------
+
+
+
+
 [numthreads( 16, 16, 1)]
 void main( int2 pixel : SV_DispatchThreadId )
 {
@@ -118,5 +190,9 @@ void main( int2 pixel : SV_DispatchThreadId )
         outputNRDDeltaReflectionRadianceHitDist[pixel] = float4(invSpp * deltaReflectionRadiance, 0.f);
         outputNRDDeltaTransmissionRadianceHitDist[pixel] = float4(invSpp * deltaTransmissionRadiance, 0.f);
         //outputNRDResidualRadianceHitDist[pixel] = float4(invSpp * residualRadiance, hitDist);
+
+
+        //-------------------- Pack Radiance
+        PackRadiance(pixel);
     }
 }
