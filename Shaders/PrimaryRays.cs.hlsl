@@ -29,6 +29,7 @@ NRI_RESOURCE( RWTexture2D<float3>, gOut_DirectEmission, u, 9, 1 );
 NRI_RESOURCE( RWTexture2D<float4>, gOut_TransparentLayer, u, 10, 1 );
 NRI_RESOURCE( RWTexture2D<float2>, gOut_ShadowData, u, 11, 1 );
 NRI_RESOURCE( RWTexture2D<float4>, gOut_Shadow_Translucency, u, 12, 1 );
+NRI_RESOURCE( RWTexture2D<float4>, gOut_PosW, u, 13, 1);
 
 float2 GetBlueNoise( Texture2D<uint3> texScramblingRanking, uint2 pixelPos, bool isCheckerboard, uint seed, uint sampleIndex, uint sppVirtual = 1, uint spp = 1 )
 {
@@ -160,6 +161,7 @@ void main( uint2 pixelPos : SV_DispatchThreadId )
     STL::BRDF::ConvertBaseColorMetalnessToAlbedoRf0( materialProps0.baseColor, materialProps0.metalness, albedo, Rf0 );
     uint noDiffuseFlag = STL::Color::Luminance( albedo ) < BRDF_ENERGY_THRESHOLD ? 1 : 0;
 
+    gOut_PosW[pixelPos] = float4(geometryProps0.X,0.0);
     gOut_ViewZ[ pixelPos ] = viewZ;
     gOut_PrimaryMip[ pixelPos ] = mipNorm;
     gOut_Normal_Roughness[ pixelPos ] = NRD_FrontEnd_PackNormalAndRoughness( materialProps0.N, materialProps0.roughness, noDiffuseFlag );

@@ -125,6 +125,7 @@ enum class Texture : uint32_t
     Tex_FPT_primaryHitEmission,
     Tex_FPT_primaryHitDiffuseReflectance,
     Tex_FPT_PrimaryHitSpecularReflectance,
+    Tex_FPT_PrimaryHitPositionW,
 
     Tex_FPT_DeltaReflectionRadianceHitDist,
     Tex_FPT_DeltaReflectionReflectance,
@@ -246,6 +247,7 @@ enum class Descriptor : uint32_t
     FALCOR_TEX_DESCRIPTOR(PrimaryHitEmission)
     FALCOR_TEX_DESCRIPTOR(PrimaryHitDiffuseReflectance)
     FALCOR_TEX_DESCRIPTOR(PrimaryHitSpecularReflectance)
+    FALCOR_TEX_DESCRIPTOR(PrimaryHitPositionW)
 
     FALCOR_TEX_DESCRIPTOR(DeltaReflectionRadianceHitDist)
     FALCOR_TEX_DESCRIPTOR(DeltaReflectionReflectance)
@@ -541,6 +543,7 @@ public:
         m_Reblur(BUFFERED_FRAME_MAX_NUM),
         m_Relax(BUFFERED_FRAME_MAX_NUM),
         m_RelaxDiffuse(BUFFERED_FRAME_MAX_NUM),
+        m_RelaxDiffuse2(BUFFERED_FRAME_MAX_NUM),
         m_Sigma(BUFFERED_FRAME_MAX_NUM),
         m_Reference(BUFFERED_FRAME_MAX_NUM),
         m_ReflectionMV(BUFFERED_FRAME_MAX_NUM),
@@ -621,6 +624,7 @@ private:
     NrdIntegration m_Reblur;
     NrdIntegration m_Relax;
     NrdIntegration m_RelaxDiffuse;
+    NrdIntegration m_RelaxDiffuse2;
     NrdIntegration m_Sigma;
     NrdIntegration m_Reference;
     NrdIntegration m_ReflectionMV;
@@ -690,6 +694,7 @@ Sample::~Sample()
     m_Reblur.Destroy();
     m_Relax.Destroy();
     m_RelaxDiffuse.Destroy();
+    m_RelaxDiffuse2.Destroy();
     m_Sigma.Destroy();
     m_Reference.Destroy();
     m_ReflectionMV.Destroy();
@@ -877,6 +882,7 @@ bool Sample::Initialize(nri::GraphicsAPI graphicsAPI)
         denoiserCreationDesc.requestedMethodNum = helper::GetCountOf(methodDescs);
 
         NRI_ABORT_ON_FALSE(m_RelaxDiffuse.Initialize(*m_Device, NRI, NRI, denoiserCreationDesc));
+        NRI_ABORT_ON_FALSE(m_RelaxDiffuse2.Initialize(*m_Device, NRI, NRI, denoiserCreationDesc));
     }
 
     // SIGMA
@@ -2048,6 +2054,7 @@ void Sample::CreateResources(nri::Format swapChainFormat)
     CreateTexture(descriptorDescs, "Texture::FPT_primaryHitEmission",                   nri::Format::RGBA32_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
     CreateTexture(descriptorDescs, "Texture::FPT_primaryHitDiffuseReflectance",         nri::Format::RGBA16_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
     CreateTexture(descriptorDescs, "Texture::FPT_PrimaryHitSpecularReflectance",        nri::Format::RGBA16_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
+    CreateTexture(descriptorDescs, "Texture::FPT_PrimaryHitPosW",                       nri::Format::RGBA32_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
                                              
     CreateTexture(descriptorDescs, "Texture::FPT_DeltaReflectionRadianceHitDist",       nri::Format::RGBA32_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
     CreateTexture(descriptorDescs, "Texture::FPT_DeltaReflectionReflectance",           nri::Format::RGBA16_SFLOAT, w, h, 1, 1, FalcorPTTextureUsageBits, nri::AccessBits::SHADER_RESOURCE);
@@ -2112,6 +2119,7 @@ void Sample::CreatePipelines()
         m_Reblur.CreatePipelines();
         m_Relax.CreatePipelines();
         m_RelaxDiffuse.CreatePipelines();
+        m_RelaxDiffuse2.CreatePipelines();
         m_Sigma.CreatePipelines();
         m_Reference.CreatePipelines();
         m_ReflectionMV.CreatePipelines();
@@ -2222,7 +2230,7 @@ void Sample::CreatePipelines()
         const nri::DescriptorRangeDesc descriptorRanges1[] =
         {
             { 0, 3, nri::DescriptorType::TEXTURE, nri::ShaderStage::ALL },
-            { 3, 10, nri::DescriptorType::STORAGE_TEXTURE, nri::ShaderStage::ALL },
+            { 3, 11, nri::DescriptorType::STORAGE_TEXTURE, nri::ShaderStage::ALL },
         };
 
         const nri::DescriptorSetDesc descriptorSetDesc[] =
@@ -2715,6 +2723,7 @@ void Sample::CreateDescriptorSets()
             Get(Descriptor::TransparentLighting_StorageTexture),
             Get(Descriptor::Unfiltered_ShadowData_StorageTexture),
             Get(Descriptor::Unfiltered_Shadow_Translucency_StorageTexture),
+            Get(Descriptor::Desc_FPT_PrimaryHitPositionW_StorageTexture),
         };
 
         const nri::DescriptorRangeUpdateDesc descriptorRangeUpdateDesc[] =
@@ -4626,6 +4635,7 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
                 {Texture::TransparentLighting, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
                 {Texture::Unfiltered_ShadowData, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
                 {Texture::Unfiltered_Shadow_Translucency, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+                {Texture::Tex_FPT_PrimaryHitPositionW, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
             };
             transitionBarriers.textures = optimizedTransitions.data();
             transitionBarriers.textureNum = BuildOptimizedTransitions(transitions, helper::GetCountOf(transitions), optimizedTransitions.data(), helper::GetCountOf(optimizedTransitions));
@@ -4904,6 +4914,88 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
                 {
                     m_RelaxDiffuse.SetMethodSettings(nrd::Method::RELAX_DIFFUSE, &m_RelaxDiffuseSetting);
                     m_RelaxDiffuse.Denoise(frameIndex, commandBuffer, commonSettings, userPool);
+                }
+
+                // NRD integration layer binds its own descriptor pool, we need to re-bind ours back
+                NRI.CmdSetDescriptorPool(commandBuffer, *m_DescriptorPool);
+            }
+        }
+
+        // NRD Delta Transmission
+        {
+            // Step1: Motion Vector.
+            {
+                static bool bEnableDeltaReflectionMV = true;
+                static bool bDRMV_WorldSpaceMotion = false;
+                if (bEnableDeltaReflectionMV)
+                {
+                    // NRD user pool
+                    NrdUserPool userPool = {};
+                    {
+                        // Common
+                        NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_DELTA_PRIMARY_POS, {&GetState(Texture::Tex_FPT_PrimaryHitPositionW), GetFormat(Texture::Tex_FPT_PrimaryHitPositionW)});
+                        NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_DELTA_SECONDARY_POS, { &GetState(Texture::Tex_FPT_DeltaTransmissionPosW), GetFormat(Texture::Tex_FPT_DeltaTransmissionPosW) });
+                        NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_MV, { &GetState(Texture::Motion), GetFormat(Texture::Motion) });
+
+                        NrdIntegration_SetResource(userPool, nrd::ResourceType::OUT_DELTA_MV, { &GetState(Texture::Tex_FPT_DeltaTransmissionMotionVector), GetFormat(Texture::Tex_FPT_DeltaTransmissionMotionVector) });
+                    }
+
+                    helper::Annotation annotation(NRI, commandBuffer, "Specular Delta MV");
+
+                    nrd::SpecularDeltaMvSettings specularDeltaMvSettings;
+                    m_TransmissionMV.SetMethodSettings(nrd::Method::SPECULAR_DELTA_MV, static_cast<void*>(&specularDeltaMvSettings));
+                    m_TransmissionMV.Denoise(frameIndex, commandBuffer, commonSettings, userPool);
+
+                    // NRD integration layer binds its own descriptor pool, we need to re-bind ours back
+                    NRI.CmdSetDescriptorPool(commandBuffer, *m_DescriptorPool);
+                }
+                else
+                {
+                    if (bDRMV_WorldSpaceMotion)
+                    {
+                        // clear to 0.0f;
+                    }
+                    else
+                    {
+                        // copy from input.
+                        const nri::TextureTransitionBarrierDesc copyTransitions[] =
+                        {
+                            nri::TextureTransition(Get(Texture::Tex_FPT_DeltaReflectionMotionVector), nri::AccessBits::UNKNOWN, nri::AccessBits::COPY_DESTINATION, nri::TextureLayout::UNKNOWN, nri::TextureLayout::GENERAL),
+                        };
+                        transitionBarriers.textures = copyTransitions;
+                        transitionBarriers.textureNum = helper::GetCountOf(copyTransitions);
+                        NRI.CmdPipelineBarrier(commandBuffer, &transitionBarriers, nullptr, nri::BarrierDependency::ALL_STAGES);
+
+                        NRI.CmdCopyTexture(commandBuffer, *Get(Texture::Tex_FPT_DeltaReflectionMotionVector), 0, nullptr, *Get(Texture::Motion), 0, nullptr);
+                    }
+                }
+            }
+
+            // Step2: PackRadiance
+            {
+
+            }
+
+            // Step3: Denoise
+            {
+                NrdUserPool userPool = {};
+                {
+                    // Common
+                    NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_MV, { &GetState(Texture::Tex_FPT_DeltaTransmissionMotionVector), GetFormat(Texture::Tex_FPT_DeltaTransmissionMotionVector) });
+                    NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_NORMAL_ROUGHNESS, { &GetState(Texture::Tex_FPT_DeltaTransmissionNormWRoughMaterialID), GetFormat(Texture::Tex_FPT_DeltaTransmissionNormWRoughMaterialID) });
+                    NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_VIEWZ, { &GetState(Texture::Tex_FPT_DeltaTransmissionPathLength), GetFormat(Texture::Tex_FPT_DeltaTransmissionPathLength) });
+
+                    // Diffuse
+                    NrdIntegration_SetResource(userPool, nrd::ResourceType::IN_DIFF_RADIANCE_HITDIST, { &GetState(Texture::Tex_FPT_DeltaTransmissionRadianceHitDist), GetFormat(Texture::Tex_FPT_DeltaTransmissionRadianceHitDist) });
+                    NrdIntegration_SetResource(userPool, nrd::ResourceType::OUT_DIFF_RADIANCE_HITDIST, { &GetState(Texture::Tex_FPT_DeltaTransmissionRadianceHitDist), GetFormat(Texture::Tex_FPT_DeltaTransmissionRadianceHitDist) });
+                }
+
+                helper::Annotation annotation(NRI, commandBuffer, "NRD Delta Transmission Denoise");
+
+                // Relax diffuse method.
+                {
+                    m_RelaxDiffuse2.SetMethodSettings(nrd::Method::RELAX_DIFFUSE, &m_RelaxDiffuseSetting);
+                    m_RelaxDiffuse2.Denoise(frameIndex, commandBuffer, commonSettings, userPool);
                 }
 
                 // NRD integration layer binds its own descriptor pool, we need to re-bind ours back
