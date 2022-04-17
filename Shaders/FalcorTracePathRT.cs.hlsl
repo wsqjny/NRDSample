@@ -68,7 +68,7 @@ static const bool kUseEnvLight = true;                                      // w
 static const bool kUseEmissiveLights = false;                               // not support now.
 static const bool kUseAnalyticLights = true;                                // whether to enable analytic light, like point light, directional light ... local light. should prepare scene light first.
 
-static const bool kDisableCaustics = true;
+static const bool kDisableCaustics = false;
 static const bool kUseRussianRoulette = true;
 static const bool kUseNRDDemodulation = true;                               // USE_NRD_DEMODULATION;
 
