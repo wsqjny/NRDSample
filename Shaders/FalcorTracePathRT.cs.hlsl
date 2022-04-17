@@ -128,7 +128,7 @@ struct FalcorPayload
 #include "FalcorLoadShadingData.hlsli"
 #include "FalcorPathTracerLightData.hlsli"
 #include "FalcorPathTracerLightHelper.hlsli"
-
+#include "FalcorEnvMapSampler.hlsli"
 
 
 
@@ -348,6 +348,30 @@ void PrepareSceneLight(inout SceneLights sl)
 }
 
 
+void writeBackground(uint2 pixel, float3 dir)
+{
+    float3 color = getSky(dir);
+
+    gOut_SampleRadiance[pixel] = 0.f;
+    gOut_SampleHitDist[pixel] = kNRDInvalidPathLength;
+    gOut_SampleEmission[pixel] = 0.f;
+    gOut_SampleReflectance[pixel] = 1.f;
+
+    if (kOutputNRDData)
+    {
+        gOut_PrimaryHitEmission[pixel] = float4(color, 1.f);
+        gOut_PrimaryHitDiffuseReflectance[pixel] = 0.f;
+        gOut_PrimaryHitSpecularReflectance[pixel] = 0.f;
+    }
+
+    if (kOutputNRDAdditionalData)
+    {
+        NRDBuffers outputNRD;
+        writeNRDDeltaReflectionGuideBuffers(outputNRD, kUseNRDDemodulation, pixel, 0.f, 0.f, -dir, 0.f, kNRDInvalidPathLength, kNRDInvalidPathLength);
+        writeNRDDeltaTransmissionGuideBuffers(outputNRD, kUseNRDDemodulation, pixel, 0.f, 0.f, -dir, 0.f, kNRDInvalidPathLength, 0.f);
+    }
+}
+
 
 [numthreads( 16, 16, 1 )]
 void main( uint2 pixelPos : SV_DispatchThreadId )
@@ -364,12 +388,7 @@ void main( uint2 pixelPos : SV_DispatchThreadId )
 
     // Early out
     float viewZ = gIn_ViewZ[ pixelPos ];
-    if( abs( viewZ ) == INF )
-    {
-        //gOut_Diff[ outPixelPos ] = 0;
-        //gOut_Spec[ outPixelPos ] = 0;
-        return;
-    }
+
 
    
 
@@ -413,6 +432,16 @@ void main( uint2 pixelPos : SV_DispatchThreadId )
 
     // primay ray hit
     FalcorPayload primaryFalcorPayload = PrepareForPrimaryRayPayload(pixelPos, viewZ);
+
+    // handle primary miss, write to background.
+    if (abs(viewZ) == INF)
+    {
+#if !defined(DELTA_REFLECTION_PASS) && !defined(DELTA_TRANSMISSION_PASS)
+        writeBackground(outPixelPos, primaryFalcorPayload.rayDirection);
+#endif
+        return;
+    }
+
     
     // handle primary hit
 #if defined(DELTA_REFLECTION_PASS)

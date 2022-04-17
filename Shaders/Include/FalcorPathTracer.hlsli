@@ -28,7 +28,7 @@
 #pragma once
 
 #include "FalcorNRDHelpers.hlsli"
-#include "FalcorEnvMapSampler.hlsli"
+
 
 static const float specularRoughnessThreshold = 0.25f; ///< Specular reflection events are only classified as specular if the material's roughness value is equal or smaller than this threshold. Otherwise they are classified diffuse.
 

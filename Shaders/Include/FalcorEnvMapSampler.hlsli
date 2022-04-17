@@ -50,16 +50,16 @@ struct EnvMapSample
 };
 
 
-#if 0
 float3 getSky(float3 dir)
 {
+#if 0
     float3 dirLocal = float3(dir.x, dir.z, -dir.y);
     float2 uv = world_to_latlong_map(dirLocal);
     return gin_Environment.SampleLevel(gLinearMipmapLinearSampler, uv, 0).rgb;
-}
+#else  
+    return GetSkyIntensity(dir, gSunDirection, gTanSunAngularRadius);
 #endif
-
-
+}
 
 
 /** Struct for sampling and evaluating an environment map.
@@ -81,7 +81,7 @@ struct EnvMapSampler
 #if USE_HIERARCHICAL_IMPORTANCE_SAMPLING == 1
         return gScene.envMap.eval(dir, lod);
 #else
-        return GetSkyIntensity(dir, gSunDirection, gTanSunAngularRadius);
+        return getSky(dir);
 #endif
     }
 
@@ -165,7 +165,7 @@ struct EnvMapSampler
 #else
         result.dir = sample_sphere(rnd);
         result.pdf = M_1_4PI;
-        result.Le = GetSkyIntensity(result.dir, gSunDirection, gTanSunAngularRadius);
+        result.Le = getSky(result.dir);
 
         return true;
 #endif
