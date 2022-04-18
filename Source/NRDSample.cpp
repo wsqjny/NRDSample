@@ -4801,6 +4801,8 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
         }
 #endif
 
+        static bool bDenoise = false;
+        if(bDenoise)
         { // Diffuse & specular indirect lighting denoising : NRD DiffuseSpecular
 
             // NRD user pool
@@ -4838,6 +4840,7 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
         }
 
         // NRD Delta Reflection
+        if (bDenoise)
         {
             // Step1: Motion Vector.
             {
@@ -4922,6 +4925,7 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
         }
 
         // NRD Delta Transmission
+        if (bDenoise)
         {
             // Step1: Motion Vector.
             {

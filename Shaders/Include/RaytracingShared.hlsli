@@ -414,7 +414,7 @@ GeometryProps CastRay( float3 rayOrigin, float3 rayDirection, float Tmin, float 
         N = STL::Geometry::RotateVector( mObjectToWorld, N );
         N = normalize( N );
         props.N = rayQuery.CommittedTriangleFrontFace( ) ? -N : N;
-        props.faceN = N;
+        props.faceN = -N;
 
         // Uv
         props.uv = barycentrics.x * primitiveData.uv0 + barycentrics.y * primitiveData.uv1 + barycentrics.z * primitiveData.uv2;
