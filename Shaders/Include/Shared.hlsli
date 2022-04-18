@@ -169,9 +169,11 @@ NRI_RESOURCE( SamplerState, gLinearSampler, s, 3, 0 );
 #define SHOW_FPT_SPECULAR_REFLECTANCE       16
 #define SHOW_FPT_SPECULAR_RADIANCE          17
 #define SHOW_FPT_DELTA_REF_REFLECTANCE      18
-#define SHOW_FPT_DELTA_REF_RADIANCE         19
-#define SHOW_FPT_DELTA_TRA_REFLECTANCE      20
-#define SHOW_FPT_DELTA_TRA_RADIANCE         21
+#define SHOW_FPT_DELTA_REF_EMISSION         19
+#define SHOW_FPT_DELTA_REF_RADIANCE         20
+#define SHOW_FPT_DELTA_TRA_REFLECTANCE      21
+#define SHOW_FPT_DELTA_TRA_RADIANCE         22
+#define SHOW_FPT_DELTA_TRA_EMISSION         23
 
 
 #define FP16_MAX                            65504.0

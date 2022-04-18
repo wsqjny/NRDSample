@@ -444,6 +444,8 @@ struct Settings
     bool        specularLobeTrimming               = true;
     bool        ortho                              = false;
     bool        adaptiveAccumulation               = false;
+
+    bool        enableDenoise3_1                    = true;
 };
 
 struct DescriptorDesc
@@ -1052,9 +1054,11 @@ void Sample::PrepareFrame(uint32_t frameIndex)
                             "FPT Spec Reflectance",
                             "FPT Spec Radiance",
                             "FPT Delta Ref Reflectance",
+                            "FPT Delta Ref Emission",
                             "FPT Delta Ref Radiance",
                             "FPT Delta Trans Reflectance",
                             "FPT Delta Trans Radiance",
+                            "FPT Delta Trans Emission",
                         };
                     #endif
 
@@ -1079,6 +1083,7 @@ void Sample::PrepareFrame(uint32_t frameIndex)
                     ImGui::SliderFloat("Resolution scale (%)", &m_ResolutionScale, m_MinResolutionScale, 1.0f, "%.3f");
 
                     ImGui::Combo("On screen", &m_Settings.onScreen, onScreenModes, helper::GetCountOf(onScreenModes));
+                    ImGui::Checkbox("Enable RelaxDenoise 3.1", &m_Settings.enableDenoise3_1);
 
                     if (m_DLSS.IsInitialized())
                         ImGui::Checkbox("DLSS", &m_IsDlssEnabled);
@@ -3630,7 +3635,7 @@ void Sample::UpdateConstantBuffer(uint32_t frameIndex, float globalResetFactor)
         data->gFrameIndex                                   = frameIndex;
         data->gForcedMaterial                               = m_Settings.forcedMaterial;
         data->gUseNormalMap                                 = m_Settings.normalMap ? 1 : 0;
-        data->gIsWorldSpaceMotionEnabled                             = m_Settings.isMotionVectorInWorldSpace ? 1 : 0;
+        data->gIsWorldSpaceMotionEnabled                    = m_Settings.isMotionVectorInWorldSpace ? 1 : 0;
         data->gTracingMode                                  = m_Settings.reference ? RESOLUTION_FULL : m_Settings.tracingMode;
         data->gSampleNum                                    = m_Settings.rpp;
         data->gBounceNum                                    = m_Settings.bounceNum;
@@ -4801,7 +4806,7 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
         }
 #endif
 
-        static bool bDenoise = false;
+        bool bDenoise = m_Settings.enableDenoise3_1;
         if(bDenoise)
         { // Diffuse & specular indirect lighting denoising : NRD DiffuseSpecular
 

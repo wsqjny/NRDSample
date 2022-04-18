@@ -170,12 +170,12 @@ FalcorPayload PrepareForPrimaryRayPayload(uint2 pixelPos, float viewZ)
     albedo0 = max(albedo0, 0.001);
 
 
-    float mtlIoR = 1.0;
+    float mtlIoR = 1.2;
     float mtlTransmission = 0.0;
     float mtlDiffTrans = 0.0;
     float mtlSpecTrans = 0.0;
 
-    if (baseColorMetalness.w > 0.95)
+    if (0 && baseColorMetalness.w > 0.95)
     {
         mtlTransmission = 1.0;
         mtlSpecTrans = 1.0;
@@ -281,12 +281,12 @@ FalcorPayload FillFalcorPayloadAfterTrace(GeometryProps geometryProps, bool useS
         STL::BRDF::ConvertBaseColorMetalnessToAlbedoRf0(baseColor, metalness, diffuse, specular);
         diffuse = max(diffuse, 0.001);
 
-        float mtlIoR = 1.0;
+        float mtlIoR = 1.2;
         float mtlTransmission = 0.0;
         float mtlDiffTrans = 0.0;
         float mtlSpecTrans = 0.0;
 
-        if (metalness > 0.95)
+        if (0 && metalness > 0.95)
         {
             mtlTransmission = 1.0;
             mtlSpecTrans = 1.0;

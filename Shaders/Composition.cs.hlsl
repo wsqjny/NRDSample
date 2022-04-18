@@ -133,6 +133,10 @@ void main( int2 dispatchThreadId : SV_DispatchThreadId )
         {
             debug = gDeltaReflectionRadiance[pixel];
         }
+        else if (gOnScreen == SHOW_FPT_DELTA_REF_EMISSION)
+        {
+            debug = gDeltaReflectionEmission[pixel];
+        }
         else if (gOnScreen == SHOW_FPT_DELTA_TRA_REFLECTANCE)
         {
             debug = gDeltaTransmissionReflectance[pixel];
@@ -141,6 +145,11 @@ void main( int2 dispatchThreadId : SV_DispatchThreadId )
         {
             debug = gDeltaTransmissionRadiance[pixel];
         }
+        else if (gOnScreen == SHOW_FPT_DELTA_TRA_EMISSION)
+        {
+            debug = gDeltaTransmissionEmission[pixel];
+        }
+
 
         gOutput[pixel] = debug;
     }
