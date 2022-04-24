@@ -123,6 +123,9 @@ NRI_RESOURCE( cbuffer, globalConstants, b, 0, 0 )
     uint gNisOutputViewportOriginY;
     uint gNisOutputViewportWidth;
     uint gNisOutputViewportHeight;
+
+    // JNTest
+    float4 gAccumSpeed;
 };
 
 NRI_RESOURCE( SamplerState, gLinearMipmapLinearSampler, s, 1, 0 );

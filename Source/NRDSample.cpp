@@ -113,6 +113,7 @@ enum class Texture : uint32_t
     TaaHistoryPrev,
     DlssOutput,
     Final,
+    AccumulateReferrenceHistory,
 
     // Falcor PT
     Tex_FPT_SampleRadiance,
@@ -166,7 +167,8 @@ enum class Pipeline : uint32_t
     Upsample,
     UpsampleNis,
     PreDlss,
-    AfterDlss
+    AfterDlss,
+    AccumulateReferrence
 };
 
 enum class Descriptor : uint32_t
@@ -231,6 +233,8 @@ enum class Descriptor : uint32_t
     DlssOutput_StorageTexture,
     Final_Texture,
     Final_StorageTexture,
+    AccumulateReferrenceHistory_Texture,
+    AccumulateReferrenceHistory_StorageTexture,
     
     // Falcor PT
 #define FALCOR_TEX_DESCRIPTOR(name)             \
@@ -290,7 +294,8 @@ enum class DescriptorSet : uint32_t
     UpsampleNis1b,
     PreDlss1,
     AfterDlss1,
-    RayTracing2
+    RayTracing2,
+    AccumulateReferrence,
 };
 
 struct NRIInterface
@@ -384,6 +389,8 @@ struct GlobalConstantBufferData
     uint32_t gNisOutputViewportOriginY;
     uint32_t gNisOutputViewportWidth;
     uint32_t gNisOutputViewportHeight;
+
+    float4 gAccumSpeed;
 };
 
 struct Settings
@@ -2017,6 +2024,8 @@ void Sample::CreateResources(nri::Format swapChainFormat)
     CreateTexture(descriptorDescs, "Texture::Final", swapChainFormat, (uint16_t)m_OutputResolution.x, (uint16_t)m_OutputResolution.y, 1, 1,
         nri::TextureUsageBits::SHADER_RESOURCE | nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::COPY_SOURCE);
 
+    CreateTexture(descriptorDescs, "Texture::AccumulateReferrenceHistory", nri::Format::RGBA16_SFLOAT, w, h, 1, 1, nri::TextureUsageBits::SHADER_RESOURCE | nri::TextureUsageBits::SHADER_RESOURCE_STORAGE, nri::AccessBits::SHADER_RESOURCE);
+
     ///-------------------------------------------------------------------------------------------------------------------------------------------------------------
     // Falcor Path Tracer
 #if 0
@@ -2642,6 +2651,35 @@ void Sample::CreatePipelines()
         NRI_ABORT_ON_FAILURE(NRI.CreateComputePipeline(*m_Device, pipelineDesc, pipeline));
         m_Pipelines.push_back(pipeline);
     }
+
+    { // Pipeline::Accumulate Refference
+        const nri::DescriptorRangeDesc descriptorRanges1[] =
+        {
+            { 0, 2, nri::DescriptorType::TEXTURE, nri::ShaderStage::ALL },
+            { 2, 1, nri::DescriptorType::STORAGE_TEXTURE, nri::ShaderStage::ALL }
+        };
+
+        const nri::DescriptorSetDesc descriptorSetDesc[] =
+        {
+            { descriptorRanges0, helper::GetCountOf(descriptorRanges0), staticSamplersDesc, helper::GetCountOf(staticSamplersDesc) },
+            { descriptorRanges1, helper::GetCountOf(descriptorRanges1) },
+        };
+
+        nri::PipelineLayoutDesc pipelineLayoutDesc = {};
+        pipelineLayoutDesc.descriptorSets = descriptorSetDesc;
+        pipelineLayoutDesc.descriptorSetNum = helper::GetCountOf(descriptorSetDesc);
+        pipelineLayoutDesc.stageMask = nri::PipelineLayoutShaderStageBits::COMPUTE;
+
+        NRI_ABORT_ON_FAILURE(NRI.CreatePipelineLayout(*m_Device, pipelineLayoutDesc, pipelineLayout));
+        m_PipelineLayouts.push_back(pipelineLayout);
+
+        nri::ComputePipelineDesc pipelineDesc = {};
+        pipelineDesc.pipelineLayout = pipelineLayout;
+        pipelineDesc.computeShader = utils::LoadShader(m_DeviceDesc->graphicsAPI, "AccumReferrence.cs", shaderCodeStorage);
+
+        NRI_ABORT_ON_FAILURE(NRI.CreateComputePipeline(*m_Device, pipelineDesc, pipeline));
+        m_Pipelines.push_back(pipeline);
+    }
 }
 
 void Sample::CreateDescriptorSets()
@@ -2944,7 +2982,7 @@ void Sample::CreateDescriptorSets()
         const nri::Descriptor* textures[] =
         {
             Get(Descriptor::Motion_Texture),
-            Get(Descriptor::ComposedLighting_ViewZ_Texture),
+            Get(Descriptor::AccumulateReferrenceHistory_Texture),
             Get(Descriptor::TransparentLighting_Texture),
             Get(Descriptor::TaaHistoryPrev_Texture),
         };
@@ -2970,7 +3008,7 @@ void Sample::CreateDescriptorSets()
         const nri::Descriptor* textures[] =
         {
             Get(Descriptor::Motion_Texture),
-            Get(Descriptor::ComposedLighting_ViewZ_Texture),
+            Get(Descriptor::AccumulateReferrenceHistory_Texture),
             Get(Descriptor::TransparentLighting_Texture),
             Get(Descriptor::TaaHistory_Texture),
         };
@@ -3171,6 +3209,30 @@ void Sample::CreateDescriptorSets()
         m_DescriptorSets.push_back(descriptorSet);
 
         NRI.UpdateDescriptorRanges(*descriptorSet, nri::WHOLE_DEVICE_GROUP, 0, helper::GetCountOf(rtDescriptorRangeUpdateDesc), rtDescriptorRangeUpdateDesc);
+    }
+
+    { // DescriptorSet::Accumulate Referrence
+        NRI_ABORT_ON_FAILURE(NRI.AllocateDescriptorSets(*m_DescriptorPool, *GetPipelineLayout(Pipeline::AccumulateReferrence), 1, &descriptorSet, 1, nri::WHOLE_DEVICE_GROUP, 0));
+        m_DescriptorSets.push_back(descriptorSet);
+
+        const nri::Descriptor* textures[] =
+        {
+            Get(Descriptor::ComposedLighting_ViewZ_Texture),
+            Get(Descriptor::AccumulateReferrenceHistory_Texture),
+        };
+
+        const nri::Descriptor* storageTextures[] =
+        {
+            Get(Descriptor::AccumulateReferrenceHistory_StorageTexture),
+        };
+
+        const nri::DescriptorRangeUpdateDesc descriptorRangeUpdateDesc[] =
+        {
+            { textures, helper::GetCountOf(textures) },
+            { storageTextures, helper::GetCountOf(storageTextures) },
+        };
+
+        NRI.UpdateDescriptorRanges(*descriptorSet, nri::WHOLE_DEVICE_GROUP, 0, helper::GetCountOf(descriptorRangeUpdateDesc), descriptorRangeUpdateDesc);
     }
 }
 
@@ -3567,6 +3629,26 @@ void Sample::UpdateConstantBuffer(uint32_t frameIndex, float globalResetFactor)
         m_Settings.sunElevation = WaveTriangle(period) * 30.0f;
     }
 
+    static int m_AccumulatedFrameNum;
+    // Accumulate Referrence
+    if (m_Settings.reference)
+    {
+        if (m_Camera.state.mWorldToClip != m_Camera.statePrev.mWorldToClip)
+        {
+            m_AccumulatedFrameNum = 0;
+        }
+        else
+        {
+            static int MAX_REF_FRAME = 3600;
+            m_AccumulatedFrameNum = Min(m_AccumulatedFrameNum + 1, MAX_REF_FRAME);
+        }
+    }
+    else
+    {
+        m_AccumulatedFrameNum = 0;
+    }
+    
+
     // Ambient accumulation
     const float maxSeconds = 0.5f;
     float maxAccumFrameNum = maxSeconds * 1000.0f / m_Timer.GetSmoothedElapsedTime();
@@ -3679,6 +3761,8 @@ void Sample::UpdateConstantBuffer(uint32_t frameIndex, float globalResetFactor)
         data->gNisOutputViewportOriginY     = config.kOutputViewportOriginY;
         data->gNisOutputViewportWidth       = config.kOutputViewportWidth;
         data->gNisOutputViewportHeight      = config.kOutputViewportHeight;
+
+        data->gAccumSpeed                   = float4(1.0f / (1.0f + float(m_AccumulatedFrameNum)), 0.0f, 0.0f, 0.0f);
     }
     NRI.UnmapBuffer(*globalConstants);
 
@@ -4433,6 +4517,34 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
             NRI.CmdDispatch(commandBuffer, rectGridW, rectGridH, 1);
         }
 
+        //if (m_Settings.reference)
+        {
+            { // Accumulate Referrence
+                helper::Annotation annotation(NRI, commandBuffer, "Composition");
+
+                const TextureState transitions[] =
+                {
+                    // Input
+                    {Texture::ComposedLighting_ViewZ, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
+                    {Texture::AccumulateReferrenceHistory, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
+
+                    // Output
+                    {Texture::AccumulateReferrenceHistory, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+                };
+                transitionBarriers.textures = optimizedTransitions.data();
+                transitionBarriers.textureNum = BuildOptimizedTransitions(transitions, helper::GetCountOf(transitions), optimizedTransitions.data(), helper::GetCountOf(optimizedTransitions));
+                NRI.CmdPipelineBarrier(commandBuffer, &transitionBarriers, nullptr, nri::BarrierDependency::ALL_STAGES);
+
+                NRI.CmdSetPipelineLayout(commandBuffer, *GetPipelineLayout(Pipeline::AccumulateReferrence));
+                NRI.CmdSetPipeline(commandBuffer, *Get(Pipeline::AccumulateReferrence));
+
+                const nri::DescriptorSet* descriptorSets[] = { frame.globalConstantBufferDescriptorSet, Get(DescriptorSet::AccumulateReferrence) };
+                NRI.CmdSetDescriptorSets(commandBuffer, 0, helper::GetCountOf(descriptorSets), descriptorSets, nullptr);
+
+                NRI.CmdDispatch(commandBuffer, rectGridW, rectGridH, 1);
+            }
+        }
+
 #if 0
         if (m_Settings.reference)
         { // Reference
@@ -4449,7 +4561,7 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
             NRI.CmdSetDescriptorPool(commandBuffer, *m_DescriptorPool);
         }
 #endif
-        if (m_IsDlssEnabled)
+        if (0 && m_IsDlssEnabled)
         {
             { // Pre
                 helper::Annotation annotation(NRI, commandBuffer, "PreDlss");
@@ -4554,7 +4666,7 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
                 {
                     // Input
                     {Texture::Motion, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
-                    {Texture::ComposedLighting_ViewZ, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
+                    {Texture::AccumulateReferrenceHistory, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
                     {Texture::TransparentLighting, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
                     {taaSrc, nri::AccessBits::SHADER_RESOURCE, nri::TextureLayout::SHADER_RESOURCE},
                     // Output
