@@ -188,9 +188,9 @@ MaterialProps GetMaterialProps( GeometryProps geometryProps, bool useSimplifiedM
     float3 baseColor = saturate( color.xyz );
 
     // Roughness and metalness
-    float3 materialProps = gIn_Textures[ baseTexture + 1 ].SampleLevel( gLinearMipmapLinearSampler, geometryProps.uv, mips.z ).xyz;
-    float roughness = materialProps.y;
-    float metalness = materialProps.z;
+    float4 materialProps = gIn_Textures[ baseTexture + 1 ].SampleLevel( gLinearMipmapLinearSampler, geometryProps.uv, mips.z );
+    float roughness = 1 - materialProps.w;
+    float metalness = 0.0;// materialProps.z;
 
     // Normal
     float2 packedNormal = gIn_Textures[ baseTexture + 2 ].SampleLevel( gLinearMipmapLinearSampler, geometryProps.uv, mips.y ).xy;

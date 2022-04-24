@@ -54,95 +54,19 @@ void Preload( uint2 sharedPos, int2 globalPos )
 [numthreads( GROUP_X, GROUP_Y, 1 )]
 void main( int2 threadPos : SV_GroupThreadId, int2 pixelPos : SV_DispatchThreadId, uint threadIndex : SV_GroupIndex )
 {
-    float2 pixelUv = float2( pixelPos + 0.5 ) * gInvRectSize;
+    float4 inColor = gIn_ComposedLighting_ViewZ[pixelPos];
+    
+    float3 Lsum = inColor.rgb;
+    Lsum *= gExposure;
 
-    STL::Rng::Initialize( pixelPos, gFrameIndex );
+    // Tonemap
+    if (gOnScreen == SHOW_FINAL)
+        Lsum = STL::Color::HdrToLinear_Uncharted(Lsum);
 
-    PRELOAD_INTO_SMEM;
-
-    // Do not generate NANs for unused threads
-    if( pixelPos.x >= gRectSize.x || pixelPos.y >= gRectSize.y )
-        return;
-
-    // Neighborhood
-    float3 m1 = 0;
-    float3 m2 = 0;
-    float3 input = 0;
-
-    float viewZ = s_Data[ threadPos.y + BORDER ][threadPos.x + BORDER ].w;
-    float viewZnearest = viewZ;
-    int2 offseti = int2( BORDER, BORDER );
-
-    [unroll]
-    for( int dy = 0; dy <= BORDER * 2; dy++ )
-    {
-        [unroll]
-        for( int dx = 0; dx <= BORDER * 2; dx++ )
-        {
-            int2 t = int2( dx, dy );
-            int2 smemPos = threadPos + t;
-            float4 data = s_Data[ smemPos.y ][ smemPos.x ];
-
-            if( dx == BORDER && dy == BORDER )
-                input = data.xyz;
-            else
-            {
-                int2 t1 = t - BORDER;
-                if( ( abs( t1.x ) + abs( t1.y ) == 1 ) && abs( data.w ) < abs( viewZnearest ) )
-                {
-                    viewZnearest = data.w;
-                    offseti = t;
-                }
-            }
-
-            m1 += data.xyz;
-            m2 += data.xyz * data.xyz;
-        }
-    }
-
-    float invSum = 1.0 / ( ( BORDER * 2 + 1 ) * ( BORDER * 2 + 1 ) );
-    m1 *= invSum;
-    m2 *= invSum;
-
-    float3 sigma = sqrt( abs( m2 - m1 * m1 ) );
-
-    // Previous pixel position
-    offseti -= BORDER;
-    float2 offset = float2( offseti ) * gInvRectSize;
-    float3 Xvnearest = STL::Geometry::ReconstructViewPosition( pixelUv + offset, gCameraFrustum, viewZnearest, gOrthoMode );
-    float3 Xnearest = STL::Geometry::AffineTransform( gViewToWorld, Xvnearest );
-    float3 mvNearest = gIn_ObjectMotion[ pixelPos + offseti ] * ( gIsWorldSpaceMotionEnabled ? 1.0 : gInvRectSize.xyy );
-    float2 pixelUvPrev = STL::Geometry::GetPrevUvFromMotion( pixelUv + offset, Xnearest, gWorldToClipPrev, mvNearest, gIsWorldSpaceMotionEnabled );
-    pixelUvPrev -= offset;
-
-    // History clamping
-    float2 pixelPosPrev = saturate( pixelUvPrev ) * gRectSizePrev;
-    float3 history = BicubicFilterNoCorners( gIn_History, gLinearSampler, pixelPosPrev, gInvScreenSize, TAA_HISTORY_SHARPNESS ).xyz;
-    float3 historyClamped = STL::Color::Clamp( m1.xyzz, sigma.xyzz, history.xyzz ).xyz;
-
-    // History weight
-    bool isInScreen = float( all( saturate( pixelUvPrev ) == pixelUvPrev ) );
-    float2 pixelMotion = pixelUvPrev - pixelUv;
-    float motionAmount = saturate( length( pixelMotion ) / TAA_MOTION_MAX_REUSE );
-    float historyWeight = lerp( TAA_MAX_HISTORY_WEIGHT, TAA_MIN_HISTORY_WEIGHT, motionAmount );
-    historyWeight *= float( any( gJitter != 0.0 ) && isInScreen );
-    historyWeight *= 1.0 - gReference;
-
-    // Final mix
-    float3 result = lerp( input, historyClamped, historyWeight );
-
-    // Split screen - noisy input / denoised output
-    result = pixelUv.x < gSeparator ? input : result;
-
-    // Split screen - vertical line
-    float verticalLine = saturate( 1.0 - abs( pixelUv.x - gSeparator ) * gRectSize.x / 3.5 );
-    verticalLine = saturate( verticalLine / 0.5 );
-    verticalLine *= float( gSeparator != 0.0 );
-    verticalLine *= float( gScreenSize.x == gRectSize.x );
-
-    const float3 nvColor = float3( 118.0, 185.0, 0.0 ) / 255.0;
-    result = lerp( result, nvColor * verticalLine, verticalLine );
+    // Conversion
+    if (gOnScreen == SHOW_FINAL || gOnScreen == SHOW_BASE_COLOR)
+        Lsum = STL::Color::LinearToSrgb(Lsum);
 
     // Output
-    gOut_History[ pixelPos ] = result;
+    gOut_History[pixelPos] = Lsum;
 }
