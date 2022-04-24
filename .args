@@ -83,6 +83,15 @@
         },
         {
           "Command": "--scene=ZeroDay/MEASURE_SEVEN/MEASURE_SEVEN.fbx"
+        },		
+		{
+          "Command": "--scene=JNTest/gray_room_for_gi_denoise.fbx"
+        },
+		{
+          "Command": "--scene=JNTest/gray_room_for_gi_denoise-withwater.fbx"
+        },
+		{
+          "Command": "--scene=NetEE/PTTest/untitled2-jianmian_50.fbx"
         }
       ]
     },
