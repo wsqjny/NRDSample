@@ -22,9 +22,10 @@ NRI_RESOURCE( Texture2D<float4>, gDeltaReflectionRadiance,		t, 7, 1);
 NRI_RESOURCE( Texture2D<float4>, gDeltaTransmissionEmission,	t, 8, 1);
 NRI_RESOURCE( Texture2D<float4>, gDeltaTransmissionReflectance, t, 9, 1);
 NRI_RESOURCE( Texture2D<float4>, gDeltaTransmissionRadiance,	t, 10, 1);
+NRI_RESOURCE( Texture2D<float4>, gDirectLight,                  t, 11, 1);
 
 // Outputs
-NRI_RESOURCE( RWTexture2D<float4>, gOutput, u, 11, 1 );
+NRI_RESOURCE( RWTexture2D<float4>, gOutput, u, 12, 1 );
 
 
 bool is_valid(Texture2D tex)
@@ -147,7 +148,11 @@ void main( int2 dispatchThreadId : SV_DispatchThreadId )
         }
         else if (gOnScreen == SHOW_FPT_DELTA_TRA_EMISSION)
         {
-            debug = gDeltaTransmissionEmission[pixel];
+            debug = gDeltaTransmissionEmission[pixel];            
+        }
+        else if(gOnScreen == SHOW_DIRECT_LIGHT)
+        {
+            debug = gDirectLight[pixel];
         }
 
 

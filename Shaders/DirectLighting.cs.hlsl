@@ -35,12 +35,6 @@ void main( int2 pixelPos : SV_DispatchThreadId )
     float3 Lemi = gIn_DirectEmission[ pixelPos ];
     float3 Lsum = Ldirect * shadow + Lemi;
 
-    // Debug
-    if( gOnScreen == SHOW_SHADOW )
-        Lsum = shadow;
-    else if( gOnScreen >= SHOW_MESH )
-        Lsum = Ldirect;
-
     // Transparent layer ( reference mode )
     float4 transparentLayer = ( gTransparent && gReference ) ? gIn_TransparentLayer[ pixelPos ] : 0;
     Lsum = Lsum * ( 1.0 - transparentLayer.w ) * ( transparentLayer.w != 0.0 ? GLASS_TINT : 1.0 ) + transparentLayer.xyz;
