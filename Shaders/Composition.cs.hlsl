@@ -23,9 +23,10 @@ NRI_RESOURCE( Texture2D<float4>, gDeltaTransmissionEmission,	t, 8, 1);
 NRI_RESOURCE( Texture2D<float4>, gDeltaTransmissionReflectance, t, 9, 1);
 NRI_RESOURCE( Texture2D<float4>, gDeltaTransmissionRadiance,	t, 10, 1);
 NRI_RESOURCE( Texture2D<float4>, gDirectLight,                  t, 11, 1);
+NRI_RESOURCE( Texture2D<float>,  gIn_ViewZ,                     t, 12, 1);      // for taa.
 
 // Outputs
-NRI_RESOURCE( RWTexture2D<float4>, gOutput, u, 12, 1 );
+NRI_RESOURCE( RWTexture2D<float4>, gOutput, u, 13, 1 );
 
 
 bool is_valid(Texture2D tex)
@@ -38,7 +39,14 @@ void main( int2 dispatchThreadId : SV_DispatchThreadId )
 {
     const uint2 pixel = dispatchThreadId.xy;
  
+    float viewZ = gIn_ViewZ[pixel];
+    
     float4 outputColor = 0.0;
+
+    if (is_valid(gDirectLight))
+    {
+        outputColor.rgb += gDirectLight[pixel].rgb;
+    }
 
     if (is_valid(gEmission))
     {
@@ -102,6 +110,7 @@ void main( int2 dispatchThreadId : SV_DispatchThreadId )
         outputColor.rgb += deltaTransmissionColor;
     }
 
+    outputColor.w = abs(viewZ) * NRD_FP16_VIEWZ_SCALE;
     gOutput[pixel] = outputColor;
 
 

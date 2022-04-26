@@ -372,7 +372,6 @@ void writeBackground(uint2 pixel, float3 dir)
     }
 }
 
-
 [numthreads( 16, 16, 1 )]
 void main( uint2 pixelPos : SV_DispatchThreadId )
 {
@@ -391,9 +390,6 @@ void main( uint2 pixelPos : SV_DispatchThreadId )
 
 
    
-
-
-
     // Ambient
     //float3 Lamb = gIn_Ambient.SampleLevel( gLinearSampler, float2( 0.5, 0.5 ), 0 );
     //Lamb *= gAmbient;
@@ -401,8 +397,6 @@ void main( uint2 pixelPos : SV_DispatchThreadId )
     // Secondary rays
     STL::Rng::Initialize(pixelPos, gFrameIndex);
 
-
-#if 1
     float4 diffIndirect = 0;
     float4 diffDirectionPdf = 0;
     float diffTotalWeight = 1e-6;
@@ -512,15 +506,14 @@ void main( uint2 pixelPos : SV_DispatchThreadId )
 #endif
             }
         }
+
+        break;
     }
 
 
     // Output
 #if !defined(DELTA_REFLECTION_PASS) && !defined(DELTA_TRANSMISSION_PASS)
     gPathTracer.writeOutput(path);
-#endif
-
-
 #endif
 }
 
@@ -532,6 +525,354 @@ void main( uint2 pixelPos : SV_DispatchThreadId )
     // no TraceRayInline support, because of:
     //  - DXBC
     //  - SPIRV generation is blocked by https://github.com/microsoft/DirectXShaderCompiler/issues/4221
+}
+
+#endif
+
+
+
+#if 0 // NRDSample IndirectRay cs
+
+struct TracePathDesc
+{
+    // Non-jittered pixel UV
+    float2 pixelUv;
+
+    // BRDF energy threshold
+    float threshold;
+
+    // Bounces to trace
+    uint bounceNum;
+
+    // Instance inclusion mask ( DXR )
+    uint instanceInclusionMask;
+
+    // Ray flags ( DXR )
+    uint rayFlags;
+
+    // A hint to use simplified materials ( flat colors, flat normals, etc. )
+    bool useSimplifiedModel;
+
+    // Some global ambient to be applied at the end of the path
+    float3 Lamb;
+};
+
+struct TracePathPayload
+{
+    // Geometry properties
+    GeometryProps geometryProps;
+
+    // Material properties
+    MaterialProps materialProps;
+
+    // Left by bounce preceding input bounce ( 1 if starting from primary hits or from the camera )
+    float3 BRDF;
+
+    // Left by input bounce or 0
+    float3 Lsum;
+
+    // Accumulated previous frame weight
+    float accumulatedPrevFrameWeight;
+
+    // Left by input bounce or 0
+    float pathLength;
+
+    // Input bounce index ( 0 if tracing starts from the camera )
+    uint bounceIndex;
+
+    // Diffuse or specular path ( at this event, next event will be stochastically estimated )
+    bool isDiffuse;
+};
+
+float4 TracePath(TracePathDesc desc, inout TracePathPayload payload)
+{
+    float2 mipAndCone = GetConeAngleFromRoughness(payload.geometryProps.mip, payload.materialProps.roughness);
+
+    [loop]
+    for (uint i = 0; i < desc.bounceNum && !payload.geometryProps.IsSky(); i++)
+    {
+        // Choose ray
+        float3 rayDirection = 0;
+        if (payload.bounceIndex != 0)
+        {
+            // Not primary ray
+            float3x3 mLocalBasis = STL::Geometry::GetBasis(payload.materialProps.N);
+            float3 Vlocal = STL::Geometry::RotateVector(mLocalBasis, -payload.geometryProps.rayDirection);
+            float trimmingFactor = NRD_GetTrimmingFactor(payload.materialProps.roughness, gTrimmingParams);
+
+            float VoH = 0;
+            float throughput = 0;
+            float throughputWithImportanceSampling = 0;
+            float pdf = 0;
+
+            float2 rnd = STL::Rng::GetFloat2();
+
+            if (payload.isDiffuse)
+            {
+                float3 rayLocal = STL::ImportanceSampling::Cosine::GetRay(rnd);
+                rayDirection = STL::Geometry::RotateVectorInverse(mLocalBasis, rayLocal);
+
+                throughput = 1.0; // = [ albedo / PI ] / STL::ImportanceSampling::Cosine::GetPDF( NoL );
+
+                float NoL = saturate(dot(payload.materialProps.N, rayDirection));
+                pdf = STL::ImportanceSampling::Cosine::GetPDF(NoL);
+            }
+            else
+            {
+                float3 Hlocal = STL::ImportanceSampling::VNDF::GetRay(rnd, payload.materialProps.roughness, Vlocal, trimmingFactor);
+                float3 H = STL::Geometry::RotateVectorInverse(mLocalBasis, Hlocal);
+                rayDirection = reflect(payload.geometryProps.rayDirection, H);
+
+                VoH = abs(dot(-payload.geometryProps.rayDirection, H));
+
+                // It's a part of VNDF sampling - see http://jcgt.org/published/0007/04/01/paper.pdf ( paragraph "Usage in Monte Carlo renderer" )
+                float NoL = saturate(dot(payload.materialProps.N, rayDirection));
+                throughput = STL::BRDF::GeometryTerm_Smith(payload.materialProps.roughness, NoL);
+
+                float NoV = abs(dot(payload.materialProps.N, -payload.geometryProps.rayDirection));
+                float NoH = saturate(dot(payload.materialProps.N, H));
+                pdf = STL::ImportanceSampling::VNDF::GetPDF(NoV, NoH, payload.materialProps.roughness);
+            }
+
+            // Update BRDF
+            float3 albedo, Rf0;
+            STL::BRDF::ConvertBaseColorMetalnessToAlbedoRf0(payload.materialProps.baseColor, payload.materialProps.metalness, albedo, Rf0);
+
+            float3 F = STL::BRDF::FresnelTerm_Schlick(Rf0, VoH);
+            payload.BRDF *= payload.isDiffuse ? albedo : F;
+            payload.BRDF *= throughput;
+        }
+        else
+        {
+            // Primary ray
+            rayDirection = -GetViewVector(payload.geometryProps.X);
+        }
+
+
+        // Cast ray and update payload ( i.e. jump to next point )
+        payload.geometryProps = CastRay(payload.geometryProps.GetXoffset(), rayDirection, 0.0, INF, mipAndCone, gWorldTlas, desc.instanceInclusionMask, desc.rayFlags, desc.useSimplifiedModel);
+        payload.materialProps = GetMaterialProps(payload.geometryProps, desc.useSimplifiedModel);
+        mipAndCone = GetConeAngleFromRoughness(payload.geometryProps.mip, payload.isDiffuse ? 1.0 : payload.materialProps.roughness);
+
+        // Compute lighting
+        float3 L = payload.materialProps.Ldirect;
+        if (STL::Color::Luminance(L) != 0 && !gDisableShadowsAndEnableImportanceSampling)
+            L *= CastVisibilityRay_AnyHit(payload.geometryProps.GetXoffset(), gSunDirection, 0.0, INF, mipAndCone, gWorldTlas, desc.instanceInclusionMask, desc.rayFlags);
+        L += payload.materialProps.Lemi;
+
+        // Accumulate lighting
+        L *= payload.BRDF;
+        payload.Lsum += L;
+
+
+        if (i == 0)
+        {
+            payload.pathLength = payload.geometryProps.tmin;
+        }
+
+
+        // Next bounce
+        payload.bounceIndex++;
+    }
+
+    // Ambient estimation at the end of the path
+    float3 albedo, Rf0;
+    STL::BRDF::ConvertBaseColorMetalnessToAlbedoRf0(payload.materialProps.baseColor, payload.materialProps.metalness, albedo, Rf0);
+
+    float NoV = abs(dot(payload.materialProps.N, -payload.geometryProps.rayDirection));
+    float3 F = STL::BRDF::EnvironmentTerm_Ross(Rf0, NoV, payload.materialProps.roughness);
+
+    float scale = lerp(1.0, 1.5, payload.materialProps.metalness);
+    float3 BRDF = albedo * (1 - F) + F / scale;
+    BRDF *= float(!payload.geometryProps.IsSky());
+
+    float occlusion = REBLUR_FrontEnd_GetNormHitDist(payload.geometryProps.tmin, 0.0, gHitDistParams, 1.0);
+    occlusion = lerp(1.0 / STL::Math::Pi(1.0), 1.0, occlusion);
+    occlusion *= exp2(AMBIENT_FADE * STL::Math::LengthSquared(payload.geometryProps.X - gCameraOrigin));
+
+    payload.Lsum += desc.Lamb * payload.BRDF * BRDF * occlusion;
+
+    return 1;
+}
+
+
+[numthreads( 16, 16, 1 )]
+void main( uint2 pixelPos : SV_DispatchThreadId )
+{
+    // Do not generate NANs for unused threads
+    float2 rectSize = gRectSize;
+    if (pixelPos.x >= rectSize.x || pixelPos.y >= rectSize.y)
+        return;
+
+    uint2 outPixelPos = pixelPos;
+
+    float2 pixelUv = float2(pixelPos + 0.5) * gInvRectSize;
+    float2 sampleUv = pixelUv + gJitter;
+
+    // Early out
+    float viewZ = gIn_ViewZ[pixelPos];
+
+    // G-buffer
+    float4 normalAndRoughness = NRD_FrontEnd_UnpackNormalAndRoughness(gIn_Normal_Roughness[pixelPos]);
+    float4 baseColorMetalness = gIn_BaseColor_Metalness[pixelPos];
+
+    float3 Xv = STL::Geometry::ReconstructViewPosition(sampleUv, gCameraFrustum, viewZ, gOrthoMode);
+    float3 X = STL::Geometry::AffineTransform(gViewToWorld, Xv);
+    float3 V = GetViewVector(X);
+    float3 N = normalAndRoughness.xyz;
+    float mip0 = gIn_PrimaryMip[pixelPos];
+
+
+    if (abs(viewZ) == INF)
+    {
+        writeBackground(pixelPos, V);
+        return;
+    }
+
+
+    float zScale = 0.0003 + abs(viewZ) * 0.00005;
+    float NoV0 = abs(dot(N, V));
+    float3 Xoffset = _GetXoffset(X, N);
+    Xoffset += V * zScale;
+    Xoffset += N * STL::BRDF::Pow5(NoV0) * zScale;
+
+    GeometryProps geometryProps0 = (GeometryProps)0;
+    geometryProps0.X = Xoffset;
+    geometryProps0.rayDirection = -V;
+    geometryProps0.N = N;
+    geometryProps0.mip = mip0 * mip0 * MAX_MIP_LEVEL;
+
+    MaterialProps materialProps0 = (MaterialProps)0;
+    materialProps0.N = N;
+    materialProps0.baseColor = baseColorMetalness.xyz;
+    materialProps0.roughness = normalAndRoughness.w;
+    materialProps0.metalness = baseColorMetalness.w;
+
+    // Material de-modulation
+    float3 albedo0, Rf00;
+    STL::BRDF::ConvertBaseColorMetalnessToAlbedoRf0(baseColorMetalness.xyz, baseColorMetalness.w, albedo0, Rf00);
+
+    albedo0 = max(albedo0, 0.001);
+
+    float3 envBRDF0 = STL::BRDF::EnvironmentTerm_Ross(Rf00, NoV0, materialProps0.roughness);
+    envBRDF0 = max(envBRDF0, 0.001);
+
+    // Secondary rays
+    STL::Rng::Initialize(pixelPos, gFrameIndex);
+
+    float4 diffIndirect = 0;
+    float4 diffDirectionPdf = 0;
+    float diffTotalWeight = 1e-6;
+
+    float4 specIndirect = 0;
+    float4 specDirectionPdf = 0;
+    float specTotalWeight = 1e-6;
+
+    uint sampleNum = gSampleNum << 1;
+    uint checkerboard = STL::Sequence::CheckerBoard(pixelPos, gFrameIndex) != 0;
+
+    TracePathDesc tracePathDesc = (TracePathDesc)0;
+    tracePathDesc.pixelUv = pixelUv;
+    tracePathDesc.bounceNum = gBounceNum; // TODO: adjust by roughness
+    tracePathDesc.instanceInclusionMask = GEOMETRY_IGNORE_TRANSPARENT;
+    tracePathDesc.rayFlags = 0;
+    tracePathDesc.threshold = BRDF_ENERGY_THRESHOLD;
+
+
+
+    {
+        bool isDiffuse = false;
+
+        // Trace
+        tracePathDesc.useSimplifiedModel = isDiffuse; // TODO: adjust by roughness
+        tracePathDesc.Lamb = 1.0;
+
+        TracePathPayload tracePathPayload = (TracePathPayload)0;
+        tracePathPayload.BRDF = 1.0;
+        tracePathPayload.Lsum = 0.0;
+        tracePathPayload.accumulatedPrevFrameWeight = 1.0;
+        tracePathPayload.pathLength = 0.0; // exclude primary ray length
+        tracePathPayload.bounceIndex = 1; // starting from primary ray hit
+        tracePathPayload.isDiffuse = isDiffuse;
+        tracePathPayload.geometryProps = geometryProps0;
+        tracePathPayload.materialProps = materialProps0;
+
+        float4 directionPdf = TracePath(tracePathDesc, tracePathPayload);
+
+        // De-modulate materials for denoising
+        tracePathPayload.Lsum /= isDiffuse ? albedo0 : envBRDF0;
+
+        // Convert for NRD
+        directionPdf = NRD_FrontEnd_PackDirectionAndPdf(directionPdf.xyz, directionPdf.w);
+
+        float normDist = REBLUR_FrontEnd_GetNormHitDist(tracePathPayload.pathLength, viewZ, gHitDistParams, isDiffuse ? 1.0 : materialProps0.roughness);
+        float4 nrdData = REBLUR_FrontEnd_PackRadianceAndHitDist(tracePathPayload.Lsum, normDist, USE_SANITIZATION);
+        if (gDenoiserType != REBLUR)
+            nrdData = RELAX_FrontEnd_PackRadianceAndHitDist(tracePathPayload.Lsum, tracePathPayload.pathLength, USE_SANITIZATION);
+
+        specIndirect += nrdData;
+    }
+
+    {
+        bool isDiffuse = true;
+
+        // Trace
+        tracePathDesc.useSimplifiedModel = isDiffuse; // TODO: adjust by roughness
+        tracePathDesc.Lamb = 0.0;
+
+        TracePathPayload tracePathPayload = (TracePathPayload)0;
+        tracePathPayload.BRDF = 1.0;
+        tracePathPayload.Lsum = 0.0;
+        tracePathPayload.accumulatedPrevFrameWeight = 1.0;
+        tracePathPayload.pathLength = 0.0; // exclude primary ray length
+        tracePathPayload.bounceIndex = 1; // starting from primary ray hit
+        tracePathPayload.isDiffuse = isDiffuse;
+        tracePathPayload.geometryProps = geometryProps0;
+        tracePathPayload.materialProps = materialProps0;
+
+        float4 directionPdf = TracePath(tracePathDesc, tracePathPayload);
+
+        // De-modulate materials for denoising
+        tracePathPayload.Lsum /= isDiffuse ? albedo0 : envBRDF0;
+
+        // Convert for NRD
+        directionPdf = NRD_FrontEnd_PackDirectionAndPdf(directionPdf.xyz, directionPdf.w);
+
+        float normDist = REBLUR_FrontEnd_GetNormHitDist(tracePathPayload.pathLength, viewZ, gHitDistParams, isDiffuse ? 1.0 : materialProps0.roughness);
+        float4 nrdData = REBLUR_FrontEnd_PackRadianceAndHitDist(tracePathPayload.Lsum, normDist, USE_SANITIZATION);
+        if (gDenoiserType != REBLUR)
+            nrdData = RELAX_FrontEnd_PackRadianceAndHitDist(tracePathPayload.Lsum, tracePathPayload.pathLength, USE_SANITIZATION);
+
+        diffIndirect += nrdData;
+    }
+
+
+    {
+        float4 Radiance = 0;
+        float hitDist = 0;
+        float4 reflectance = 0;
+        if (materialProps0.metalness < 0.01)
+        {
+            Radiance = float4(diffIndirect.xyz, 0.0);
+            hitDist = diffIndirect.w;
+            reflectance.xyz = albedo0;
+        }
+        else
+        {
+            Radiance = float4(specIndirect.xyz, 0.1);
+            hitDist = specIndirect.w;
+            reflectance.xyz = envBRDF0;
+        }        
+        gOut_SampleRadiance[pixelPos] = Radiance;
+        gOut_SampleHitDist[pixelPos] = hitDist;
+        gOut_SampleEmission[pixelPos] = 0;
+        gOut_SampleReflectance[pixelPos] = reflectance;
+
+
+        gOut_PrimaryHitEmission[pixelPos] = 0;
+        gOut_PrimaryHitDiffuseReflectance[pixelPos] = float4(albedo0, 1);
+        gOut_PrimaryHitSpecularReflectance[pixelPos] = float4(envBRDF0, 1);
+    }
 }
 
 #endif
