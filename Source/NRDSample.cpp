@@ -2340,7 +2340,7 @@ void Sample::CreatePipelines()
         const nri::DescriptorRangeDesc descriptorRanges1[] =
         {
             { 0, 7, nri::DescriptorType::TEXTURE, nri::ShaderStage::ALL },
-            { 7, 17, nri::DescriptorType::STORAGE_TEXTURE, nri::ShaderStage::ALL }
+            { 7, 21, nri::DescriptorType::STORAGE_TEXTURE, nri::ShaderStage::ALL }
         };
 
         const nri::DescriptorSetDesc descriptorSetDesc[] =
@@ -2370,7 +2370,7 @@ void Sample::CreatePipelines()
         const nri::DescriptorRangeDesc descriptorRanges1[] =
         {
             { 0, 7, nri::DescriptorType::TEXTURE, nri::ShaderStage::ALL },
-            { 7, 17, nri::DescriptorType::STORAGE_TEXTURE, nri::ShaderStage::ALL }
+            { 7, 21, nri::DescriptorType::STORAGE_TEXTURE, nri::ShaderStage::ALL }
         };
 
         const nri::DescriptorSetDesc descriptorSetDesc[] =
@@ -2400,7 +2400,7 @@ void Sample::CreatePipelines()
         const nri::DescriptorRangeDesc descriptorRanges1[] =
         {
             { 0, 7, nri::DescriptorType::TEXTURE, nri::ShaderStage::ALL },
-            { 7, 17, nri::DescriptorType::STORAGE_TEXTURE, nri::ShaderStage::ALL }
+            { 7, 21, nri::DescriptorType::STORAGE_TEXTURE, nri::ShaderStage::ALL }
         };
 
         const nri::DescriptorSetDesc descriptorSetDesc[] =
@@ -2906,6 +2906,11 @@ void Sample::CreateDescriptorSets()
             Get(Descriptor::Desc_FPT_DeltaTransmissionNormWRoughMaterialID_StorageTexture),
             Get(Descriptor::Desc_FPT_DeltaTransmissionPathLength_StorageTexture),
             Get(Descriptor::Desc_FPT_DeltaTransmissionPosW_StorageTexture),
+
+            Get(Descriptor::Desc_FPT_SampleDiffuseRadianceHitDist_StorageTexture),
+            Get(Descriptor::Desc_FPT_SampleSpecularRadianceHitDist_StorageTexture),
+            Get(Descriptor::Desc_FPT_DeltaReflectionRadianceHitDist_StorageTexture),
+            Get(Descriptor::Desc_FPT_DeltaTransmissionRadianceHitDist_StorageTexture),
         };
 
         const nri::DescriptorRangeUpdateDesc descriptorRangeUpdateDesc[] =
@@ -4227,6 +4232,11 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
                 {Texture::Tex_FPT_DeltaTransmissionNormWRoughMaterialID, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
                 {Texture::Tex_FPT_DeltaTransmissionPathLength, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
                 {Texture::Tex_FPT_DeltaTransmissionPosW, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+
+                {Texture::Tex_FPT_SampleDiffuseRadianceHitDist, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+                {Texture::Tex_FPT_SampleSpecularRadianceHitDist, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+                {Texture::Tex_FPT_DeltaReflectionRadianceHitDist, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
+                {Texture::Tex_FPT_DeltaTransmissionRadianceHitDist, nri::AccessBits::SHADER_RESOURCE_STORAGE, nri::TextureLayout::GENERAL},
             };
             transitionBarriers.textures = optimizedTransitions.data();
             transitionBarriers.textureNum = BuildOptimizedTransitions(transitions, helper::GetCountOf(transitions), optimizedTransitions.data(), helper::GetCountOf(optimizedTransitions));
@@ -4280,6 +4290,7 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
             NRI.CmdDispatch(commandBuffer, rectGridWmod, rectGridHmod, 1);
         }
 
+#if 0
         { // Falcor Resolve
             helper::Annotation annotation(NRI, commandBuffer, "FalcorResolvePass");
 
@@ -4311,6 +4322,7 @@ void Sample::_renderFrameFalcorPT(uint32_t frameIndex)
 
             NRI.CmdDispatch(commandBuffer, rectGridW, rectGridH, 1);
         }
+#endif
 
 
 #if 0

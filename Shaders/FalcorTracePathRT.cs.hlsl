@@ -372,6 +372,131 @@ void writeBackground(uint2 pixel, float3 dir)
     }
 }
 
+
+void clampRadiance(inout float3 diffuseRadiance, inout float3 specularRadiance)
+{
+    static const float kEpsilon = 1e-6f;
+    static const float gMaxIntensity = 1000.f;
+
+    float lDiff = luminance(diffuseRadiance);
+    if (lDiff > kEpsilon)
+    {
+        diffuseRadiance *= min(gMaxIntensity / lDiff, 1.f);
+    }
+
+    float lSpec = luminance(specularRadiance);
+    if (lSpec > kEpsilon)
+    {
+        specularRadiance *= min(gMaxIntensity / lSpec, 1.f);
+    }
+}
+
+void PackRadiance(uint2 pixel, float viewZ, float linearRoughness)
+{
+    float4 diffuseRadianceHitDist               = outputNRDDiffuseRadianceHitDist[pixel];
+    float4 specularRadianceHitDist              = outputNRDSpecularRadianceHitDist[pixel];
+    float4 deltaReflectionRadianceHitDist       = outputNRDDeltaReflectionRadianceHitDist[pixel];
+    float4 deltaTransmissionRadianceHitDist     = outputNRDDeltaTransmissionRadianceHitDist[pixel];
+    
+    clampRadiance(diffuseRadianceHitDist.rgb, specularRadianceHitDist.rgb);
+    clampRadiance(deltaReflectionRadianceHitDist.rgb, deltaTransmissionRadianceHitDist.rgb);
+
+    // Diffuse/Specular maybe REBLUR or RELAX. only for relax now.    
+    if (gDenoiserType != REBLUR)    // RELAX
+    {
+        diffuseRadianceHitDist = RELAX_FrontEnd_PackRadianceAndHitDist(diffuseRadianceHitDist.rgb, diffuseRadianceHitDist.a);
+        specularRadianceHitDist = RELAX_FrontEnd_PackRadianceAndHitDist(specularRadianceHitDist.rgb, specularRadianceHitDist.a);
+    }
+    else
+    {
+        //float viewZ = gViewZ[ipos];
+        //float linearRoughness = gNormalRoughness[ipos].z;
+
+        diffuseRadianceHitDist.a = REBLUR_FrontEnd_GetNormHitDist(diffuseRadianceHitDist.a, viewZ, gHitDistParams, linearRoughness);
+        diffuseRadianceHitDist   = REBLUR_FrontEnd_PackRadianceAndHitDist(diffuseRadianceHitDist.rgb, diffuseRadianceHitDist.a);
+
+        specularRadianceHitDist.a = REBLUR_FrontEnd_GetNormHitDist(specularRadianceHitDist.a, viewZ, gHitDistParams, linearRoughness);
+        specularRadianceHitDist   = REBLUR_FrontEnd_PackRadianceAndHitDist(specularRadianceHitDist.rgb, specularRadianceHitDist.a);
+    }
+
+    outputNRDDiffuseRadianceHitDist[pixel] = diffuseRadianceHitDist;
+    outputNRDSpecularRadianceHitDist[pixel] = specularRadianceHitDist;
+
+    // Delta Reflection/Transmission is RELAX_DIFFUSE
+    {
+        deltaReflectionRadianceHitDist = RELAX_FrontEnd_PackRadianceAndHitDist(deltaReflectionRadianceHitDist.rgb, deltaReflectionRadianceHitDist.a);
+        deltaTransmissionRadianceHitDist = RELAX_FrontEnd_PackRadianceAndHitDist(deltaTransmissionRadianceHitDist.rgb, deltaTransmissionRadianceHitDist.a);
+
+        outputNRDDeltaReflectionRadianceHitDist[pixel] = deltaReflectionRadianceHitDist;
+        outputNRDDeltaTransmissionRadianceHitDist[pixel]= deltaTransmissionRadianceHitDist;
+    }   
+}
+
+void WriteRadianceHitDist(uint2 pixel, float viewZ, float linearRoughness)
+{
+
+    //-------------------- Resolve Sample data.
+    {
+        float3 diffuseRadiance = 0.f;
+        float3 specularRadiance = 0.f;
+        float3 deltaReflectionRadiance = 0.f;
+        float3 deltaTransmissionRadiance = 0.f;
+        float3 residualRadiance = 0.f;
+        float hitDist = 0.f;
+
+        //for (uint sampleIdx = 0; sampleIdx < spp; sampleIdx++)
+        {
+            const uint2 idx = pixel;// offset + sampleIdx;
+
+            //const NRDRadiance radianceData = sampleNRDRadiance[idx];
+            //const NRDPathType pathType = radianceData.getPathType();
+            //const float3 radiance = radianceData.getRadiance();
+            float4 radianceData = gOut_SampleRadiance[idx];
+            float  pathType = radianceData.a;
+            float3 radiance = radianceData.rgb;
+
+            float3 reflectance = gOut_SampleReflectance[idx].rgb;
+            float3 emission = gOut_SampleEmission[idx].rgb;
+            float3 demodulatedRadiance = max(0.f, (radiance - emission)) / reflectance;
+
+            if (pathType < 0.05f)
+            {
+                diffuseRadiance += demodulatedRadiance;
+            }
+            else if (pathType < 0.15)
+            {
+                specularRadiance += demodulatedRadiance;
+            }
+            else if (pathType < 0.25)
+            {
+                deltaReflectionRadiance += demodulatedRadiance;
+            }
+            else if (pathType < 0.35)
+            {
+                deltaTransmissionRadiance += demodulatedRadiance;
+            }
+            else
+            {
+                residualRadiance += radiance;
+            }
+
+            hitDist += gOut_SampleHitDist[idx];
+        }
+
+        uint invSpp = 1;
+        outputNRDDiffuseRadianceHitDist[pixel] = float4(invSpp * diffuseRadiance, invSpp * hitDist);
+        outputNRDSpecularRadianceHitDist[pixel] = float4(invSpp * specularRadiance, invSpp * hitDist);
+        outputNRDDeltaReflectionRadianceHitDist[pixel] = float4(invSpp * deltaReflectionRadiance, 0.f);
+        outputNRDDeltaTransmissionRadianceHitDist[pixel] = float4(invSpp * deltaTransmissionRadiance, 0.f);
+        //outputNRDResidualRadianceHitDist[pixel] = float4(invSpp * residualRadiance, hitDist);
+    }
+
+    //-------------------- Pack Radiance
+    {       
+        PackRadiance(pixel, viewZ, linearRoughness);
+    }
+}
+
 [numthreads( 16, 16, 1 )]
 void main( uint2 pixelPos : SV_DispatchThreadId )
 {
@@ -514,6 +639,7 @@ void main( uint2 pixelPos : SV_DispatchThreadId )
     // Output
 #if !defined(DELTA_REFLECTION_PASS) && !defined(DELTA_TRANSMISSION_PASS)
     gPathTracer.writeOutput(path);
+    WriteRadianceHitDist(pixelPos, viewZ, primaryFalcorPayload.roughness);
 #endif
 }
 
@@ -872,6 +998,9 @@ void main( uint2 pixelPos : SV_DispatchThreadId )
         gOut_PrimaryHitEmission[pixelPos] = 0;
         gOut_PrimaryHitDiffuseReflectance[pixelPos] = float4(albedo0, 1);
         gOut_PrimaryHitSpecularReflectance[pixelPos] = float4(envBRDF0, 1);
+
+
+        WriteRadianceHitDist(pixelPos);
     }
 }
 

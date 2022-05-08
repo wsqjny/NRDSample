@@ -49,3 +49,9 @@ NRI_RESOURCE(RWTexture2D<float4>,   gOut_DeltaTransmissionEmission,             
 NRI_RESOURCE(RWTexture2D<float4>,   gOut_DeltaTransmissionNormWRoughMaterialID,     u, 21, 1);
 NRI_RESOURCE(RWTexture2D<float>,    gOut_DeltaTransmissionPathLength,               u, 22, 1);
 NRI_RESOURCE(RWTexture2D<float4>,   gOut_DeltaTransmissionPosW,                     u, 23, 1);
+
+// Outputs
+NRI_RESOURCE(RWTexture2D<float4>,   outputNRDDiffuseRadianceHitDist,                u, 24, 1);
+NRI_RESOURCE(RWTexture2D<float4>,   outputNRDSpecularRadianceHitDist,               u, 25, 1);
+NRI_RESOURCE(RWTexture2D<float4>,   outputNRDDeltaReflectionRadianceHitDist,        u, 26, 1);
+NRI_RESOURCE(RWTexture2D<float4>,   outputNRDDeltaTransmissionRadianceHitDist,      u, 27, 1);
